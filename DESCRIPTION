@@ -16,4 +16,7 @@ Imports:
     jsonlite,
     metawoRld,
     rentrez (>= 1.2.3),
-    rlang
+    rlang,
+    shiny
+Suggests: 
+    rclipboard

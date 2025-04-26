@@ -1,0 +1,230 @@
+#' @title Assess Study Relevance using LLM
+#'
+#' @description
+#' Fetches metadata for an identifier, generates a prompt based on project
+#' criteria, calls an LLM API to assess relevance based on Title/Abstract,
+#' parses the response, and caches results.
+#'
+#' @param identifier Character string. The DOI or PMID of the study.
+#' @param metawoRld_path Character string. Path to the root of the metawoRld project.
+#' @param force_fetch Logical. If TRUE, bypass the metadata cache and re-fetch
+#'   from online sources. Defaults to FALSE.
+#' @param force_assess Logical. If TRUE, bypass the assessment cache and
+#'   re-run the LLM assessment. Defaults to FALSE.
+#' @param service Character string. The LLM service to use (currently only "openai").
+#' @param model Character string. The specific LLM model name.
+#' @param email Character string (optional). Email for NCBI Entrez.
+#' @param ncbi_api_key Character string (optional). NCBI API key.
+#' @param ... Additional arguments passed to the underlying LLM API call function
+#'   (e.g., `temperature`, `max_tokens` passed to `.call_llm_openai`).
+#'
+#' @return A list containing the structured assessment result (decision, score,
+#'   rationale) or aborts on critical failure.
+#' @export
+#' @importFrom fs path file_exists path_norm
+#' @importFrom yaml read_yaml
+#' @importFrom jsonlite fromJSON toJSON
+#' @importFrom rlang is_list list2 warn inform abort %||% check_installed set_names
+#' @importFrom glue glue
+#' @importFrom metawoRld .sanitize_id # Need export or copy
+#'
+#' @examples
+#' \dontrun{
+#' # --- Prerequisites ---
+#' # 1. Set API key: usethis::edit_r_environ("project") -> add OPENAI_API_KEY=sk-... -> Restart R
+#' # 2. Create a dummy metawoRld project
+#' proj_path <- file.path(tempdir(), "assess_test_proj")
+#' metawoRld::create_metawoRld(
+#'    proj_path,
+#'    project_name = "Test Assessment",
+#'    project_description = "Testing DataFindR assessment",
+#'    inclusion_criteria = c("Human study", "Pregnancy", "Serum or Plasma", "Cytokine measurement"),
+#'    exclusion_criteria = c("Animal study", "Review article", "Non-English")
+#' )
+#'
+#' # --- Run Assessment ---
+#' pmid <- "31772108" # Example PMID relevant to cytokines/pregnancy
+#' tryCatch({
+#'   assessment_res <- df_assess_relevance(
+#'      identifier = pmid,
+#'      metawoRld_path = proj_path,
+#'      email = "your.email@example.com", # Replace with your email
+#'      service = "openai",
+#'      model = "gpt-3.5-turbo" # Use a cheaper model for testing initially
+#'   )
+#'   print(assessment_res)
+#'
+#'   # --- Run again (should use cache) ---
+#'   assessment_res_cached <- df_assess_relevance(pmid, proj_path, email = "your.email@example.com")
+#'   print(assessment_res_cached)
+#'
+#'   # --- Force re-assessment ---
+#'   assessment_res_forced <- df_assess_relevance(pmid, proj_path, email = "your.email@example.com", force_assess = TRUE)
+#'   print(assessment_res_forced)
+#'
+#' }, error = function(e) {
+#'   message("Assessment failed: ", e$message)
+#' })
+#'
+#' # --- Clean up ---
+#' unlink(proj_path, recursive = TRUE)
+#' }
+df_assess_relevance <- function(identifier,
+                                metawoRld_path,
+                                force_fetch = FALSE,
+                                force_assess = FALSE,
+                                service = "openai",
+                                model = "gpt-3.5-turbo", # Default to cheaper model maybe?
+                                email = NULL,
+                                ncbi_api_key = NULL,
+                                ...) {
+
+  # --- Input & Path Checks ---
+  if (!rlang::is_scalar_character(identifier) || identifier == "") {
+    rlang::abort("`identifier` must be a non-empty character string.")
+  }
+  if (!rlang::is_scalar_character(metawoRld_path)) {
+    rlang::abort("`metawoRld_path` must be a character string.")
+  }
+  proj_path <- fs::path_norm(metawoRld_path)
+  if (!fs::dir_exists(proj_path)) {
+    rlang::abort(glue::glue("metawoRld project path not found: {proj_path}"))
+  }
+  config_path <- fs::path(proj_path, "_metawoRld.yml")
+  if (!fs::file_exists(config_path)) {
+    rlang::abort(glue::glue("Project configuration file '_metawoRld.yml' not found in: {proj_path}"))
+  }
+
+
+  # --- 1. Check Assessment Cache ---
+  # Use internal caching functions directly
+  if (!force_assess) {
+    cached_assessment <- .check_cache(identifier, type = "assessment", metawoRld_path = proj_path)
+    if (!is.null(cached_assessment) && is.list(cached_assessment)) {
+      # Optional: Basic validation of cached structure
+      if (all(c("decision", "score", "rationale") %in% names(cached_assessment))) {
+        rlang::inform(glue::glue("Using cached assessment result for '{identifier}'."))
+        return(cached_assessment)
+      } else {
+        rlang::warn(glue::glue("Cached assessment for '{identifier}' has unexpected structure. Re-assessing."))
+        # Optionally clear the bad cache entry here?
+        # df_clear_cache(identifier, type="assessment", metawoRld_path = proj_path)
+      }
+    }
+  }
+
+  # --- 2. Fetch or Load Metadata ---
+  rlang::inform(glue::glue("Checking metadata cache for '{identifier}'..."))
+  metadata <- NULL
+  if (!force_fetch) {
+    metadata <- .check_cache(identifier, type = "metadata", metawoRld_path = proj_path)
+    if(!is.null(metadata)) {
+      rlang::inform("Using cached metadata.")
+    }
+  }
+
+  if (is.null(metadata)) {
+    rlang::inform("Metadata not cached or `force_fetch=TRUE`. Fetching...")
+    metadata <- df_fetch_metadata(identifier = identifier, email = email, ncbi_api_key = ncbi_api_key)
+    if (is.null(metadata)) {
+      rlang::abort(glue::glue("Failed to fetch metadata for '{identifier}'. Cannot proceed with assessment."))
+    }
+    # Save fetched metadata to cache
+    .save_to_cache(identifier = identifier, data = metadata, type = "metadata", metawoRld_path = proj_path)
+  }
+
+  # Basic check: ensure metadata is a list with expected components
+  if (!is.list(metadata) || is.null(metadata$title) || is.null(metadata$abstract)) {
+    rlang::abort(glue::glue("Fetched/cached metadata for '{identifier}' is invalid or missing Title/Abstract."))
+  }
+
+
+  # --- 3. Get Project Criteria ---
+  project_config <- tryCatch({
+    yaml::read_yaml(config_path)
+  }, error = function(e){
+    rlang::abort(c("Failed to read or parse _metawoRld.yml", "i" = e$message), parent = e)
+  })
+
+  inclusion_criteria <- project_config$inclusion_criteria %||% character(0)
+  exclusion_criteria <- project_config$exclusion_criteria %||% character(0)
+
+  if (length(inclusion_criteria) == 0 && length(exclusion_criteria) == 0) {
+    rlang::abort("No inclusion or exclusion criteria found in _metawoRld.yml. Cannot perform assessment.")
+  }
+
+
+  # --- 4. Generate Assessment Prompt ---
+  assessment_prompt <- .generate_assessment_prompt(
+    title = metadata$title,
+    abstract = metadata$abstract,
+    inclusion_criteria = inclusion_criteria,
+    exclusion_criteria = exclusion_criteria
+  )
+
+  # --- 5. Call LLM API ---
+  # Prepare arguments for the LLM call wrapper
+  llm_args <- rlang::list2(
+    prompt = assessment_prompt,
+    model = model,
+    response_format = "json_object", # Request JSON output
+    instructions = "You are a scientific literature screening assistant.", # System prompt
+    ... # Pass through any extra args like temperature
+  )
+
+  llm_response_body <- tryCatch({
+    # Currently hardcoded to openai, extend later if needed
+    if (tolower(service) == "openai") {
+      .call_llm_openai(!!!llm_args) # Splice the arguments
+    } else {
+      rlang::abort(glue::glue("LLM service '{service}' is not currently supported."))
+    }
+  }, error = function(e){
+    rlang::abort(c(glue::glue("LLM API call failed during assessment for '{identifier}'."),
+                   "i" = e$message), parent = e)
+  })
+
+
+  # --- 6. Parse and Validate LLM Response ---
+  llm_content_string <- llm_response_body$choices[[1]]$message$content %||% ""
+  if (llm_content_string == "") {
+    rlang::abort(glue::glue("LLM returned an empty response content for assessment of '{identifier}'."))
+  }
+
+  parsed_assessment <- tryCatch({
+    jsonlite::fromJSON(llm_content_string, simplifyVector = FALSE)
+  }, error = function(e) {
+    rlang::abort(c(glue::glue("Failed to parse JSON response from LLM for assessment of '{identifier}'."),
+                   "i" = glue::glue("LLM Raw Content: {llm_content_string}"),
+                   "i" = e$message), parent = e)
+  })
+
+  # Validate structure
+  required_fields <- c("decision", "score", "rationale")
+  if (!is.list(parsed_assessment) || !all(required_fields %in% names(parsed_assessment))) {
+    rlang::abort(glue::glue("LLM assessment JSON for '{identifier}' is missing required fields ({paste(required_fields, collapse=', ')}).\nLLM Raw Content: {llm_content_string}"))
+  }
+  # Optional: Validate decision value
+  valid_decisions <- c("Include", "Exclude", "Needs Manual Review")
+  if(!parsed_assessment$decision %in% valid_decisions){
+    rlang::warn(glue::glue("LLM assessment decision ('{parsed_assessment$decision}') for '{identifier}' is not one of the expected values: {paste(valid_decisions, collapse=', ')}. Using the value as is."))
+  }
+  # Optional: Validate score type/range
+  if(!is.numeric(parsed_assessment$score) || parsed_assessment$score < 0 || parsed_assessment$score > 1){
+    rlang::warn(glue::glue("LLM assessment score ('{parsed_assessment$score}') for '{identifier}' is not a number between 0 and 1. Using the value as is."))
+  }
+
+  # Add timestamp and model info?
+  parsed_assessment$assessment_timestamp <- Sys.time()
+  parsed_assessment$assessment_model <- model
+  parsed_assessment$assessment_service <- service
+
+
+  # --- 7. Save Validated Assessment to Cache ---
+  .save_to_cache(identifier = identifier, data = parsed_assessment, type = "assessment", metawoRld_path = proj_path)
+
+  rlang::inform(glue::glue("Assessment completed for '{identifier}': {parsed_assessment$decision} (Score: {round(parsed_assessment$score, 2)})"))
+
+  # --- 8. Return Result ---
+  return(parsed_assessment)
+}

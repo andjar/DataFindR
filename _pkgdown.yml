@@ -1,0 +1,15 @@
+url: https://andjar.github.io/DataFindR # Replace with your site URL if deploying
+template:
+  bootstrap: 5
+
+navbar:
+  left:
+    - text: "Reference"
+      href: reference/index.html
+    - text: "Articles"
+      menu:
+        - text: "Conceptual Overview (metawoRld)"
+          href: https://andjar.github.io/metawoRld/articles/conceptual_overview.html # Link to metawoRld's vignette
+        # Add DataFindR-specific articles here later if needed (e.g., API setup)
+    - text: "metawoRld Pkg" # Link to the other package's site
+      href: https://andjar.github.io/metawoRld # Replace with metawoRld site URL
