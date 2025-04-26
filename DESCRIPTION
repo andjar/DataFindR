@@ -17,7 +17,8 @@ Imports:
     metawoRld,
     rentrez (>= 1.2.3),
     rlang,
-    shiny
+    shiny,
+    dplyr
 Remotes:
     andjar/metawoRld
 Suggests: 

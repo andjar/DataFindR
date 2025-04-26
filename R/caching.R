@@ -206,3 +206,103 @@ df_clear_cache <- function(identifier = NULL, type = NULL, metawoRld_path) {
 
   invisible(TRUE)
 }
+
+#' Find Studies Pending Extraction
+#'
+#' Scans the assessment cache and compares it against the extraction cache
+#' within a metawoRld project to find studies marked for inclusion that
+#' haven't been extracted yet.
+#'
+#' @param metawoRld_path Path to the root of the metawoRld project.
+#' @param decision_threshold Character vector. Assessment decisions that trigger
+#'   inclusion for extraction (e.g., c("Include", "Needs Manual Review")).
+#'   Case-sensitive.
+#'
+#' @return A character vector of original study identifiers (DOIs/PMIDs)
+#'   pending extraction, or an empty vector if none are found or on error.
+#' @noRd
+#' @keywords internal
+#'
+#' @importFrom fs dir_ls file_exists path path_file
+#' @importFrom jsonlite fromJSON
+#' @importFrom rlang warn inform is_list `%||%`
+#' @importFrom purrr map map_lgl keep discard set_names
+#' @importFrom tools file_path_sans_ext
+#' @importFrom metawoRld .desanitize_id .sanitize_id # Need export or copy
+.find_pending_extraction_studies <- function(metawoRld_path,
+                                             decision_threshold = c("Include")) {
+
+  # --- START temporary copy of sanitizers ---
+  .sanitize_id <- function(id) {
+    if (is.null(id) || id == "") return("")
+    id <- gsub("/", "_fslash_", id, fixed = TRUE)
+    id <- gsub(":", "_colon_", id, fixed = TRUE)
+    id <- gsub("\\?", "_qmark_", id, fixed = TRUE)
+    id <- gsub("\\*", "_star_", id, fixed = TRUE)
+    id <- gsub("<", "_lt_", id, fixed = TRUE)
+    id <- gsub(">", "_gt_", id, fixed = TRUE)
+    id <- gsub("\\|", "_pipe_", id, fixed = TRUE)
+    id <- gsub("\"", "_quote_", id, fixed = TRUE)
+    return(id)
+  }
+  .desanitize_id <- function(sanitized_id) {
+    if (is.null(sanitized_id) || sanitized_id == "") return("")
+    id <- sanitized_id
+    id <- gsub("_quote_", "\"", id, fixed = TRUE)
+    id <- gsub("_pipe_", "|", id, fixed = TRUE)
+    id <- gsub("_gt_", ">", id, fixed = TRUE)
+    id <- gsub("_lt_", "<", id, fixed = TRUE)
+    id <- gsub("_star_", "*", id, fixed = TRUE)
+    id <- gsub("_qmark_", "?", id, fixed = TRUE)
+    id <- gsub("_colon_", ":", id, fixed = TRUE)
+    id <- gsub("_fslash_", "/", id, fixed = TRUE)
+    return(id)
+  }
+  # --- END temporary copy ---
+
+  cache_dir <- .get_datafindr_cache_path(metawoRld_path, create = FALSE)
+  assessment_cache_dir <- fs::path(cache_dir, "assessment")
+  extraction_cache_dir <- fs::path(cache_dir, "extraction")
+
+  if (!fs::dir_exists(assessment_cache_dir)) {
+    rlang::inform("Assessment cache directory not found. Cannot determine pending studies.")
+    return(character(0))
+  }
+  # Extraction dir might not exist yet, that's okay
+
+  assessment_files <- fs::dir_ls(assessment_cache_dir, glob = "*_assessment.json")
+  if (length(assessment_files) == 0) {
+    return(character(0))
+  }
+
+  # Get sanitized IDs from assessment files
+  sanitized_ids_assessed <- gsub("_assessment\\.json$", "", fs::path_file(assessment_files))
+
+  # Read assessment files and filter based on decision
+  included_sanitized_ids <- purrr::map(assessment_files, ~{
+    res <- tryCatch(jsonlite::fromJSON(., simplifyVector = FALSE), error = function(e) NULL)
+    if (rlang::is_list(res) && !is.null(res$decision) && res$decision %in% decision_threshold) {
+      # Return the sanitized ID from the filename
+      gsub("_assessment\\.json$", "", fs::path_file(.))
+    } else {
+      NULL
+    }
+  }) |> purrr::compact() |> unlist()
+
+
+  if (length(included_sanitized_ids) == 0) {
+    return(character(0)) # No studies met the decision threshold
+  }
+
+  # Check which of these already have an extraction file
+  pending_sanitized_ids <- purrr::keep(included_sanitized_ids, ~{
+    extraction_filename <- paste0(., "_extraction.json")
+    extraction_filepath <- fs::path(extraction_cache_dir, extraction_filename)
+    !fs::file_exists(extraction_filepath) # Keep if extraction file DOES NOT exist
+  })
+
+  # Convert back to original identifiers
+  pending_original_ids <- vapply(pending_sanitized_ids, .desanitize_id, character(1))
+
+  return(pending_original_ids)
+}

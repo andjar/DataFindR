@@ -228,3 +228,177 @@ df_assess_relevance <- function(identifier,
   # --- 8. Return Result ---
   return(parsed_assessment)
 }
+
+#' @title Assess Relevance for a Batch of Study Identifiers
+#'
+#' @description
+#' Runs the relevance assessment workflow (`df_assess_relevance`) for multiple
+#' DOIs/PMIDs, leveraging caching and providing a summary of results.
+#'
+#' @param identifiers Character vector. A vector of DOIs and/or PMIDs.
+#' @param metawoRld_path Character string. Path to the root of the metawoRld project.
+#' @param force_fetch Logical. If TRUE, bypass the metadata cache for all identifiers.
+#' @param force_assess Logical. If TRUE, bypass the assessment cache for all identifiers.
+#' @param service Character string. The LLM service to use (e.g., "openai").
+#' @param model Character string. The specific LLM model name.
+#' @param email Character string (optional). Email for NCBI Entrez.
+#' @param ncbi_api_key Character string (optional). NCBI API key.
+#' @param stop_on_error Logical. If TRUE, the batch process stops if any single
+#'   assessment fails. If FALSE (default), it attempts to process all identifiers
+#'   and reports errors in the summary.
+#' @param ... Additional arguments passed down to `df_assess_relevance` and
+#'   subsequently to the LLM API call function (e.g., `temperature`).
+#'
+#' @return A data frame (tibble) summarizing the assessment results for each
+#'   identifier, with columns:
+#'   \describe{
+#'     \item{`identifier`}{The DOI or PMID.}
+#'     \item{`status`}{"Success" or "Failure".}
+#'     \item{`decision`}{Assessment decision ("Include", "Exclude", etc.) if status is "Success".}
+#'     \item{`score`}{Confidence score if status is "Success".}
+#'     \item{`rationale`}{LLM rationale if status is "Success".}
+#'     \item{`error_message`}{The error message if status is "Failure".}
+#'   }
+#' Also prints progress and summary information to the console. Assessment
+#' results are saved to the cache within the `metawoRld` project.
+#'
+#' @export
+#' @importFrom purrr map safely list_transpose keep discard set_names map_chr map_dbl map_lgl compact
+#' @importFrom dplyr bind_rows tibble mutate select relocate if_else everything
+#' @importFrom rlang inform warn is_character abort is_logical `%||%` list2 !!!
+#' @importFrom glue glue
+#' @import cli # For progress bar
+#'
+#' @examples
+#' \dontrun{
+#' # --- Prerequisites ---
+#' # 1. Set API key: usethis::edit_r_environ("project") -> add OPENAI_API_KEY=sk-... -> Restart R
+#' # 2. Create a dummy metawoRld project
+#' proj_path <- file.path(tempdir(), "assess_batch_proj")
+#' metawoRld::create_metawoRld(
+#'    proj_path,
+#'    project_name = "Test Batch Assessment",
+#'    project_description = "Testing DataFindR batch assessment",
+#'    inclusion_criteria = c("Human study", "Pregnancy", "Serum or Plasma", "Cytokine measurement"),
+#'    exclusion_criteria = c("Animal study", "Review article", "Non-English")
+#' )
+#'
+#' # --- Identifiers from a hypothetical search ---
+#' ids_to_assess <- c(
+#'   "31772108", # Should likely be Include
+#'   "25376210", # Should likely be Include
+#'   "invalid_pmid", # Should fail fetch
+#'   "10.1038/nature14539" # Example DOI (Nature review, likely Exclude)
+#' )
+#'
+#' # --- Run Batch Assessment ---
+#' batch_results <- df_assess_batch(
+#'   identifiers = ids_to_assess,
+#'   metawoRld_path = proj_path,
+#'   email = "your.email@example.com", # Replace with your email
+#'   service = "openai",
+#'   model = "gpt-3.5-turbo",
+#'   stop_on_error = FALSE # Continue processing even if one fails
+#' )
+#'
+#' # --- View Results ---
+#' print(batch_results)
+#'
+#' # --- Clean up ---
+#' unlink(proj_path, recursive = TRUE)
+#' }
+df_assess_batch <- function(identifiers,
+                            metawoRld_path,
+                            force_fetch = FALSE,
+                            force_assess = FALSE,
+                            service = "openai",
+                            model = "gpt-3.5-turbo",
+                            email = NULL,
+                            ncbi_api_key = NULL,
+                            stop_on_error = FALSE,
+                            ...) {
+
+  # --- Input Validation ---
+  if (!rlang::is_character(identifiers) || length(identifiers) == 0) {
+    rlang::abort("`identifiers` must be a non-empty character vector.")
+  }
+  # Other args validated within df_assess_relevance
+
+  n_total <- length(identifiers)
+  rlang::inform(glue::glue("Starting batch assessment for {n_total} identifier(s)..."))
+
+  # --- Use purrr::safely for error handling ---
+  # Pass ... args correctly to df_assess_relevance
+  safe_assess <- purrr::safely(
+    .f = df_assess_relevance,
+    otherwise = NULL, # Return NULL on error within the wrapper
+    quiet = FALSE # Show errors from df_assess_relevance as they happen
+  )
+
+  # Prepare arguments list for map - ensure ... are passed correctly
+  # Need to construct a list where each element contains args for one call
+  # This is complex if ... needs careful handling. Simpler: call inside map.
+
+  results_list <- list()
+  cli::cli_progress_bar("Assessing identifiers", total = n_total)
+
+  for (i in seq_along(identifiers)) {
+    id <- identifiers[[i]]
+    cli::cli_progress_update()
+    # Capture result/error for this ID
+    res <- safe_assess(
+      identifier = id,
+      metawoRld_path = metawoRld_path,
+      force_fetch = force_fetch,
+      force_assess = force_assess,
+      service = service,
+      model = model,
+      email = email,
+      ncbi_api_key = ncbi_api_key,
+      ... # Pass extra arguments
+    )
+    results_list[[id]] <- res # Store result named by identifier
+
+    # Stop processing if an error occurred and stop_on_error is TRUE
+    if (!is.null(res$error) && stop_on_error) {
+      cli::cli_progress_done(result = "failed")
+      extracted_error_msg <- res$error$message %||% "Unknown error during assessment."
+      rlang::abort(glue::glue("Batch assessment stopped due to error on identifier '{id}': {extracted_error_msg}"), parent = res$error)
+    }
+  }
+  cli::cli_progress_done()
+
+  # --- Process Results List ---
+  # Transpose to easily access all results or all errors
+  results_transposed <- purrr::list_transpose(results_list, simplify = FALSE)
+
+  # Create summary tibble
+  summary_df <- dplyr::tibble(
+    identifier = names(results_list),
+    status = dplyr::if_else(purrr::map_lgl(results_transposed$error, rlang::is_null), "Success", "Failure"),
+    # Extract fields safely using map_* with default NA
+    decision = purrr::map_chr(results_transposed$result, ~ .x$decision %||% NA_character_),
+    score = purrr::map_dbl(results_transposed$result, ~ .x$score %||% NA_real_),
+    rationale = purrr::map_chr(results_transposed$result, ~ .x$rationale %||% NA_character_),
+    error_message = purrr::map_chr(results_transposed$error, ~ .x$message %||% NA_character_)
+  )
+
+  # --- Report Summary ---
+  n_success <- sum(summary_df$status == "Success")
+  n_failed <- n_total - n_success
+
+  rlang::inform("--- Batch Assessment Summary ---")
+  rlang::inform(glue::glue("Total identifiers processed: {n_total}"))
+  rlang::inform(glue::glue("Successful assessments: {n_success}"))
+  rlang::inform(glue::glue("Failed assessments: {n_failed}"))
+  if (n_failed > 0) {
+    rlang::warn("Failures occurred for the following identifiers (see output table for details):")
+    failed_ids <- summary_df$identifier[summary_df$status == "Failure"]
+    # Print only first few failed IDs if list is long
+    max_print <- 10
+    print_ids <- if(length(failed_ids) > max_print) c(failed_ids[1:max_print], "...") else failed_ids
+    rlang::warn(paste(print_ids, collapse = ", "))
+  }
+
+  return(summary_df)
+}
