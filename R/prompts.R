@@ -164,7 +164,7 @@ df_generate_extraction_prompt <- function(metawoRld_path, identifier = NULL, fet
   # Define common fields explicitly mentioned in the prompt template for examples
   common_req_meta <- c("study_id", "title", "authors", "year", "journal", "study_design", "country", "sample_type", "outcome_groups", "measurement_methods")
   common_opt_meta <- c("doi", "abstract", "keywords_paper", "funding_source", "ethics_approval", "inclusion_summary", "exclusion_summary", "datafindr_assessment")
-  common_req_data <- c("measurement_id", "method_ref_id", "group_label", "n", "statistic_type", "value1")
+  common_req_data <- c("measurement_id", "method_ref_id", "group_label", "variable_name", "n", "statistic_type", "value1")
   common_opt_data <- c("value2", "unit", "comparison_group_label", "comparison_p_value", "notes")
 
   # Find fields defined in schema but NOT explicitly listed in the template examples
@@ -232,7 +232,7 @@ df_generate_extraction_prompt <- function(metawoRld_path, identifier = NULL, fet
           // Example: "grp1": {{ "name": "Preeclampsia Cases", "definition": "Diagnosed via XYZ criteria..." }}
         }},
         "measurement_methods": {{ // REQUIRED: Define assays from Methods. FOCUS HERE. <<methods_hint>>
-          // Example: "elisa_il6": {{ "analysis_type": "ELISA", "target_cytokine": "IL-6", "unit": "pg/mL", ... }}
+          // Example: "elisa_il6": {{ "analysis_type": "ELISA", "target_biomarker": "IL-6", "unit": "pg/mL", ... }}
         }},
         // --- Additional Required Metadata Fields (from project schema if any) ---
         <<format_additional_fields(additional_req_meta, "REQUIRED")>>
@@ -259,7 +259,7 @@ df_generate_extraction_prompt <- function(metawoRld_path, identifier = NULL, fet
           // --- Common Required Data Fields ---
           "measurement_id": "string", // REQUIRED: Create unique ID ("m1", "m2"...).
           "method_ref_id": "string", // REQUIRED: Key matching metadata.measurement_methods. CRITICAL LINK.
-          "cytokine_name": "string", // REQUIRED: Specific analyte (e.g., "IL-6").
+          "variable_name": "string", // REQUIRED: Specific analyte (e.g., "IL-6").
           "group_label": "string", // REQUIRED: Key matching metadata.outcome_groups. CRITICAL LINK.
           "n": integer, // REQUIRED: Sample size for this group/statistic. Check tables/legends carefully.
           "statistic_type": "string", // REQUIRED: Be precise (e.g., "mean_sd", "median_iqr", "mean_sem").

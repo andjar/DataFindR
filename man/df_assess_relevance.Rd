@@ -9,8 +9,8 @@ df_assess_relevance(
   metawoRld_path,
   force_fetch = FALSE,
   force_assess = FALSE,
-  service = "openai",
-  model = "gpt-3.5-turbo",
+  service = "google",
+  model = "gemini-2.5-flash-preview-04-17",
   email = NULL,
   ncbi_api_key = NULL,
   ...

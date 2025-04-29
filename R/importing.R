@@ -26,6 +26,7 @@
 #' @importFrom glue glue
 #' @importFrom dplyr bind_rows # For converting list of lists to data frame
 #' @importFrom purrr map_dfr # Alternative for converting list to data frame
+#' @importFrom data.table rbindlist # For converting list of lists to data frame
 #' @import metawoRld # Need get_schema, add_study_data, .sanitize_id
 df_import_extraction <- function(identifier,
                                  metawoRld_path,
@@ -119,7 +120,7 @@ df_import_extraction <- function(identifier,
   if(length(data_points_list) > 0) {
     # Use dplyr::bind_rows for robustness to missing optional columns
     data_df <- tryCatch({
-      dplyr::bind_rows(data_points_list)
+      dplyr::tibble(data.table::rbindlist(data_points_list, fill=TRUE))
       # Consider type conversions here if needed, e.g., using readr::type_convert
       # Or rely on metawoRld::add_study_data / load_metawoRld for later handling
     }, error = function(e) {

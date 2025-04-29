@@ -73,8 +73,8 @@ df_assess_relevance <- function(identifier,
                                 metawoRld_path,
                                 force_fetch = FALSE,
                                 force_assess = FALSE,
-                                service = "openai",
-                                model = "gpt-3.5-turbo", # Default to cheaper model maybe?
+                                service = "google",
+                                model = "gemini-2.5-flash-preview-04-17",
                                 email = NULL,
                                 ncbi_api_key = NULL,
                                 ...) {
@@ -176,6 +176,8 @@ df_assess_relevance <- function(identifier,
     # Currently hardcoded to openai, extend later if needed
     if (tolower(service) == "openai") {
       .call_llm_openai(!!!llm_args) # Splice the arguments
+    }else if (tolower(service) == "google") {
+      inject(.call_llm_google(!!!llm_args)) # Splice the arguments
     } else {
       rlang::abort(glue::glue("LLM service '{service}' is not currently supported."))
     }
@@ -186,7 +188,7 @@ df_assess_relevance <- function(identifier,
 
 
   # --- 6. Parse and Validate LLM Response ---
-  llm_content_string <- llm_response_body$choices[[1]]$message$content %||% ""
+  llm_content_string <- .get_llm_content_gemini(llm_response_body) %||% ""
   if (llm_content_string == "") {
     rlang::abort(glue::glue("LLM returned an empty response content for assessment of '{identifier}'."))
   }
@@ -217,6 +219,7 @@ df_assess_relevance <- function(identifier,
   # Add timestamp and model info?
   parsed_assessment$assessment_timestamp <- Sys.time()
   parsed_assessment$assessment_model <- model
+  parsed_assessment$assessment_tokens <- llm_response_body[["usageMetadata"]][["totalTokenCount"]]
   parsed_assessment$assessment_service <- service
 
 
@@ -401,4 +404,9 @@ df_assess_batch <- function(identifiers,
   }
 
   return(summary_df)
+}
+
+#' @export
+df_add_meta_manual <- function(identifier, meta, metawoRldPath) {
+  .save_to_cache(identifier = identifier, data = meta, type = "metadata", metawoRld_path = metawoRldPath)
 }

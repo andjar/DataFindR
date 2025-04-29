@@ -306,3 +306,133 @@ df_clear_cache <- function(identifier = NULL, type = NULL, metawoRld_path) {
 
   return(pending_original_ids)
 }
+
+#' Read all datafindr cache files from a metawoRld project
+#'
+#' Scans the datafindr cache directory within a metawoRld project, reads all
+#' valid cached JSON files (assessment, extraction, metadata), parses them,
+#' and returns them organized in a nested list.
+#'
+#' The function identifies files matching the pattern
+#' `<sanitized_id>_<type>.json` within the `assessment`, `extraction`, and
+#' `metadata` subdirectories of the datafindr cache. It attempts to parse each
+#' valid file as JSON. Files that cannot be parsed or do not match the naming
+#' convention are skipped with a warning.
+#'
+#' @param metawoRld_path The path to the metawoRld project directory, which
+#'   contains the datafindr cache subdirectory.
+#'
+#' @return A named list. The top-level names are the sanitized identifiers found
+#'   in the cache. Each element is itself a list containing the parsed data,
+#'   named by the type ("assessment", "extraction", "metadata"). Returns an
+#'   empty list (`list()`) if the cache directory doesn't exist or no valid
+#'   cache files are found.
+#'
+#' @export
+#' @importFrom rlang warn inform
+#' @importFrom fs dir_exists dir_ls path path_file path_ext_remove path_rel
+#' @importFrom glue glue
+#' @importFrom jsonlite fromJSON
+#' @importFrom stringr str_match # For robust filename parsing
+#' @importFrom utils readLines
+#' # Assuming .get_datafindr_cache_path is an internal function within this package,
+#' # it does not need to be imported via @importFrom, but needs to be available.
+
+read_all_from_cache <- function(type = c("assessment", "extraction", "metadata"), metawoRld_path) {
+
+  # Get the base cache directory path, don't create it
+  cache_dir <- .get_datafindr_cache_path(metawoRld_path, create = FALSE)
+  type <- rlang::arg_match(type)
+
+  # Check if the base cache directory exists
+  if (!fs::dir_exists(cache_dir)) {
+    rlang::inform(glue::glue("Cache directory does not exist: {fs::path_rel(cache_dir, start = metawoRld_path)}"))
+    return(list()) # Return empty list if cache dir not found
+  }
+
+  # List all files recursively within the cache directory
+  # Only consider files within the expected type subdirectories
+  # Using tryCatch around dir_ls in case of permission issues, though less likely
+  all_files <- tryCatch({
+    fs::dir_ls(
+      path = fs::path(cache_dir, type),
+      type = "file", # Only list files
+      recurse = TRUE, # Search subdirectories if needed (though structure is flat within type dirs)
+      fail = FALSE # Don't error if one of the type dirs doesn't exist
+    )
+  }, error = function(e) {
+    rlang::warn(glue::glue("Error listing files in cache directory '{cache_dir}': {e$message}"))
+    return(character(0)) # Return empty character vector on error
+  })
+
+
+  if (length(all_files) == 0) {
+    rlang::inform(glue::glue("No files found in cache subdirectories: {fs::path_rel(cache_dir, start = metawoRld_path)}"))
+    return(list())
+  }
+
+  # Initialize the results list
+  cached_data <- list()
+  files_processed <- 0
+  files_failed <- 0
+
+  # Regex to extract sanitized ID and type from filename
+  # Matches: (anything)_ (assessment|extraction|metadata) .json
+  filename_pattern <- paste0("^(.*?)_", type, "\\.json$")
+
+  # Iterate through potential cache files
+  for (cache_file_path in all_files) {
+    filename <- fs::path_file(cache_file_path)
+
+    # Attempt to match the filename pattern
+    match_result <- stringr::str_match(filename, filename_pattern)
+
+    # Check if the filename matches the expected pattern
+    if (is.na(match_result[1, 1])) {
+      # Optional: Warn about files that don't match the pattern
+      # rlang::warn(glue::glue("Skipping file with unexpected name format: {filename}"))
+      next # Skip to the next file
+    }
+
+    sanitized_id <- match_result[1, 2]
+
+    # Try to read and parse the file
+    tryCatch({
+      # Read the JSON string(s) from the file
+      json_string_lines <- readLines(con = cache_file_path, warn = FALSE)
+
+      if (length(json_string_lines) == 0) {
+        rlang::warn(glue::glue("Cache file is empty, skipping: {fs::path_rel(cache_file_path, start = metawoRld_path)}"))
+        files_failed <- files_failed + 1
+        next # Skip empty file
+      }
+
+      # Collapse lines into a single string
+      json_string <- paste(json_string_lines, collapse = "\n")
+
+      # Deserialize JSON to R object
+      data <- jsonlite::fromJSON(json_string, simplifyVector = TRUE)
+
+      # Store the data in the nested list structure
+      # Initialize the identifier level if it doesn't exist
+      if (is.null(cached_data[[sanitized_id]])) {
+        cached_data[[sanitized_id]] <- list()
+      }
+      # Assign the data to the correct type
+      cached_data[[sanitized_id]][[type]] <- data
+      files_processed <- files_processed + 1
+
+    }, error = function(e) {
+      # Handle errors during reading or parsing for this specific file
+      files_failed <- files_failed + 1
+      rlang::warn(glue::glue(
+        "Failed to read or parse cache file: {fs::path_rel(cache_file_path, start = metawoRld_path)}. Error: {e$message}"
+      ))
+      # Do not add this file's data to the results
+    }) # End tryCatch for file processing
+  } # End for loop
+
+  rlang::inform(glue::glue("Read {files_processed} file(s) successfully from cache. Skipped/failed {files_failed} file(s)."))
+
+  return(cached_data)
+}

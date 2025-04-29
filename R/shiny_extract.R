@@ -58,8 +58,8 @@ df_shiny_extract <- function(launch.browser = TRUE, ...) {
                h4("3. LLM Extraction (Optional)"),
                actionButton("runExtraction", "Run LLM Extraction", icon = icon("robot"), class = "btn-primary"),
                p(em("Uses paper text & generated prompt. Requires API key.")),
-               selectInput("llmServiceExtract", "LLM Service", choices = c("openai"), selected = "openai"),
-               textInput("llmModelExtract", "LLM Model", value = "gpt-4-turbo") # Use a capable model
+               selectInput("llmServiceExtract", "LLM Service", choices = c("openai", "google"), selected = "google"),
+               textInput("llmModelExtract", "LLM Model", value = "gemini-2.5-flash-preview-04-17") # Use a capable model
              )
       ), # End Sidebar Column
 
@@ -276,7 +276,8 @@ df_shiny_extract <- function(launch.browser = TRUE, ...) {
         response_format = "json_object", # CRUCIAL for extraction
         instructions = "You are a biomedical data extraction assistant. Respond ONLY with valid JSON.",
         # Potentially pass other args like temperature if needed
-        temperature = 0.1 # Low temp for extraction
+        temperature = 0.1, # Low temp for extraction
+        max_tokens = 100000
       )
 
       withProgress(message = 'Running LLM Extraction...', value = 0, {
@@ -284,12 +285,14 @@ df_shiny_extract <- function(launch.browser = TRUE, ...) {
           incProgress(0.5)
           llm_response_body <- if (tolower(input$llmServiceExtract) == "openai") {
             .call_llm_openai(!!!llm_args) # Use internal function
+          } else if (tolower(input$llmServiceExtract) == "google") {
+            inject(.call_llm_google(!!!llm_args)) # Use internal function
           } else {
             stop(glue::glue("LLM service '{input$llmServiceExtract}' not supported."))
           }
 
           # Extract content string
-          llm_json_string <- llm_response_body$choices[[1]]$message$content %||% ""
+          llm_json_string <- .get_llm_content_gemini(llm_response_body) %||% ""
 
           if (llm_json_string == "") {
             stop("LLM returned empty content.")

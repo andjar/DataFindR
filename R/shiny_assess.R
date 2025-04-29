@@ -34,8 +34,8 @@ df_shiny_assess <- function(launch.browser = TRUE, ...) {
         h4("2. Assess Relevance"),
         actionButton("runAssessment", "Run LLM Assessment", icon = icon("rocket"), class = "btn-primary"),
         p(em("Requires API key (e.g., OPENAI_API_KEY) set in .Renviron & R restart.")),
-        selectInput("llmService", "LLM Service", choices = c("openai"), selected = "openai"),
-        textInput("llmModel", "LLM Model", value = "gpt-3.5-turbo")
+        selectInput("llmService", "LLM Service", choices = c("openai", "google"), selected = "google"),
+        textInput("llmModel", "LLM Model", value = "gemini-2.5-flash-preview-04-17")
       ),
 
       mainPanel(

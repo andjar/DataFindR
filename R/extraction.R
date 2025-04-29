@@ -75,8 +75,8 @@ df_extract_batch <- function(identifiers,
       stop(glue::glue("Paper file not found: {paper_file}"))
     }
     # Basic check for TXT - enhance later for PDF etc.
-    if(tolower(fs::path_ext(paper_file)) != "txt") {
-      stop("Only plain text (.txt) files currently supported for batch extraction.")
+    if(tolower(fs::path_ext(paper_file)) != "pdf") {
+      stop("Only pdf (.pdf) files currently supported for batch extraction.")
     }
 
     # 2. Check extraction cache
@@ -85,10 +85,7 @@ df_extract_batch <- function(identifiers,
     if (!force) {
       cached_data <- .check_cache(identifier = id, type = "extraction", metawoRld_path = meta_path)
       if (!is.null(cached_data)) {
-        # --- START temporary copy of sanitize_id ---
-        .sanitize_id <- function(id_inner) { if (is.null(id_inner) || id_inner == "") return(""); id_inner <- gsub("/", "_fslash_", id_inner, fixed = TRUE); id_inner <- gsub(":", "_colon_", id_inner, fixed = TRUE); id_inner <- gsub("\\?", "_qmark_", id_inner, fixed = TRUE); id_inner <- gsub("\\*", "_star_", id_inner, fixed = TRUE); id_inner <- gsub("<", "_lt_", id_inner, fixed = TRUE); id_inner <- gsub(">", "_gt_", id_inner, fixed = TRUE); id_inner <- gsub("\\|", "_pipe_", id_inner, fixed = TRUE); id_inner <- gsub("\"", "_quote_", id_inner, fixed = TRUE); return(id_inner)}
-        # --- END temporary copy ---
-        sanitized_id_for_path <- .sanitize_id(id)
+        sanitized_id_for_path <- metawoRld::.sanitize_id(id)
         cache_dir <- .get_datafindr_cache_path(meta_path)
         filename <- paste0(sanitized_id_for_path, "_extraction.json")
         cache_file_path <- fs::path(cache_dir, "extraction", filename)
@@ -97,12 +94,12 @@ df_extract_batch <- function(identifiers,
     }
 
     # 3. Read paper content
-    paper_content <- tryCatch({
-      paste(readLines(paper_file, warn = FALSE), collapse = "\n")
-    }, error = function(e) stop(glue::glue("Error reading paper file '{paper_file}': {e$message}")))
-    if (!nzchar(trimws(paper_content))) {
-      stop(glue::glue("Paper file '{paper_file}' is empty."))
-    }
+    # paper_content <- tryCatch({
+    #   paste(readLines(paper_file, warn = FALSE), collapse = "\n")
+    # }, error = function(e) stop(glue::glue("Error reading paper file '{paper_file}': {e$message}")))
+    # if (!nzchar(trimws(paper_content))) {
+    #   stop(glue::glue("Paper file '{paper_file}' is empty."))
+    # }
 
     # 4. Generate Prompt
     # Fetch metadata for context? Optional, but helps prompt focus.
@@ -116,28 +113,41 @@ df_extract_batch <- function(identifiers,
     }, error = function(e) stop(glue::glue("Error generating extraction prompt: {e$message}")))
 
 
+    uploaded_file_info <- tryCatch({
+      .upload_file_google(path = paper_file)
+    }, error = function(e) {
+      message("Error during file upload: ", e$message)
+      NULL
+    })
+
     # 5. Call LLM API
     llm_args <- rlang::list2(
       prompt = extraction_prompt,
       model = mdl,
+      file = uploaded_file_info,
       response_format = "json_object",
       instructions = "You are a biomedical data extraction assistant. Respond ONLY with valid JSON.",
       temperature = 0.1, # Low temp for extraction
+      max_tokens = 100000, # High limit for extraction
       ... # Pass other args
     )
     llm_response_body <- tryCatch({
       if (tolower(svc) == "openai") {
         .call_llm_openai(!!!llm_args)
+      } else if (tolower(svc) == "google") {
+        inject(.call_llm_google(!!!llm_args))
       } else { stop(glue::glue("LLM service '{svc}' not supported.")) }
     }, error = function(e) stop(glue::glue("LLM API call failed: {e$message}")))
 
     # 6. Get JSON String and Validate Format
-    llm_json_string <- llm_response_body$choices[[1]]$message$content %||% ""
+    llm_json_string <- .get_llm_content_gemini(llm_response_body) %||% ""
     if (llm_json_string == "") {
       stop("LLM returned empty content.")
     }
+
     if(!jsonlite::validate(llm_json_string)) {
       # Include raw response for debugging if possible
+      writeLines(llm_json_string, con = paste0(id, "_llm_response_debug.txt")) # Save raw response for debugging
       raw_response_snippet <- substr(llm_json_string, 1, 200)
       stop(glue::glue("LLM response was not valid JSON. Response start: '{raw_response_snippet}...'"))
     }
@@ -151,7 +161,10 @@ df_extract_batch <- function(identifiers,
     parsed_data$extraction_timestamp <- Sys.time()
     parsed_data$extraction_model <- mdl
     parsed_data$extraction_service <- svc
-
+    parsed_data$extration_prompt_tokens <- llm_response_body[["usageMetadata"]][["promptTokenCount"]]
+    parsed_data$extration_candidate_tokens <- llm_response_body[["usageMetadata"]][["candidatesTokenCount"]]
+    parsed_data$extration_thoughts_tokens <- llm_response_body[["usageMetadata"]][["thoughtsTokenCount"]]
+    parsed_data$extration_total_tokens <- llm_response_body[["usageMetadata"]][["totalTokenCount"]]
 
     # 8. Save Parsed Data to Cache
     save_path <- .save_to_cache(
