@@ -5,18 +5,23 @@
 \title{Assess Study Relevance using LLM}
 \usage{
 df_assess_relevance(
+  chat,
   identifier,
   metawoRld_path,
+  assessment_prompt_path = system.file(fs::path("prompts", "_assessment_prompt.txt"),
+    package = "DataFindR"),
+  assessment_schema_path = system.file(fs::path("prompts", "_assessment_schema.yml"),
+    package = "DataFindR"),
   force_fetch = FALSE,
   force_assess = FALSE,
-  service = "google",
-  model = "gemini-2.5-flash-preview-04-17",
   email = NULL,
   ncbi_api_key = NULL,
   ...
 )
 }
 \arguments{
+\item{chat}{An \code{ellmer} chat object.}
+
 \item{identifier}{Character string. The DOI or PMID of the study.}
 
 \item{metawoRld_path}{Character string. Path to the root of the metawoRld project.}
@@ -27,16 +32,16 @@ from online sources. Defaults to FALSE.}
 \item{force_assess}{Logical. If TRUE, bypass the assessment cache and
 re-run the LLM assessment. Defaults to FALSE.}
 
-\item{service}{Character string. The LLM service to use (currently only "openai").}
-
-\item{model}{Character string. The specific LLM model name.}
-
 \item{email}{Character string (optional). Email for NCBI Entrez.}
 
 \item{ncbi_api_key}{Character string (optional). NCBI API key.}
 
 \item{...}{Additional arguments passed to the underlying LLM API call function
 (e.g., \code{temperature}, \code{max_tokens} passed to \code{.call_llm_openai}).}
+
+\item{service}{Character string. The LLM service to use (currently only "openai").}
+
+\item{model}{Character string. The specific LLM model name.}
 }
 \value{
 A list containing the structured assessment result (decision, score,

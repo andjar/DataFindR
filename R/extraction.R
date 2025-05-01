@@ -40,13 +40,15 @@
 #' @import cli
 #' @importFrom jsonlite validate # Added validate
 #' @importFrom metawoRld .sanitize_id # Need export or copy
-df_extract_batch <- function(identifiers,
+df_extract_batch <- function(chat,
+                             identifiers,
                              paper_paths,
                              metawoRld_path,
+                             extraction_prompt_path = system.file(fs::path("prompts", "_extraction_prompt.txt"), package = "DataFindR"),
+                             extraction_schema_path = system.file(fs::path("prompts", "_extraction_schema.yml"), package = "DataFindR"),
                              force_extract = FALSE,
-                             service = "openai",
-                             model = "gpt-4-turbo",
                              stop_on_error = FALSE,
+                             ellmer_timeout_s = 300,
                              ...) {
 
   # --- Input Validation ---
@@ -105,66 +107,34 @@ df_extract_batch <- function(identifiers,
     # Fetch metadata for context? Optional, but helps prompt focus.
     fetched_metadata <- .check_cache(identifier = id, type = "metadata", metawoRld_path = meta_path)
     extraction_prompt <- tryCatch({
-      df_generate_extraction_prompt(
-        metawoRld_path = meta_path,
-        identifier = id,
-        fetched_metadata = fetched_metadata
-      )
+      .generate_extraction_prompt()
     }, error = function(e) stop(glue::glue("Error generating extraction prompt: {e$message}")))
 
-
     uploaded_file_info <- tryCatch({
-      .upload_file_google(path = paper_file)
+      ellmer::content_pdf_file(paper_file)
     }, error = function(e) {
       message("Error during file upload: ", e$message)
       NULL
     })
 
-    # 5. Call LLM API
-    llm_args <- rlang::list2(
-      prompt = extraction_prompt,
-      model = mdl,
-      file = uploaded_file_info,
-      response_format = "json_object",
-      instructions = "You are a biomedical data extraction assistant. Respond ONLY with valid JSON.",
-      temperature = 0.1, # Low temp for extraction
-      max_tokens = 100000, # High limit for extraction
-      ... # Pass other args
-    )
-    llm_response_body <- tryCatch({
-      if (tolower(svc) == "openai") {
-        .call_llm_openai(!!!llm_args)
-      } else if (tolower(svc) == "google") {
-        inject(.call_llm_google(!!!llm_args))
-      } else { stop(glue::glue("LLM service '{svc}' not supported.")) }
-    }, error = function(e) stop(glue::glue("LLM API call failed: {e$message}")))
+    type_extraction <- parse_yaml_to_ellmer_schema(extraction_schema_path)
 
-    # 6. Get JSON String and Validate Format
-    llm_json_string <- .get_llm_content_gemini(llm_response_body) %||% ""
-    if (llm_json_string == "") {
-      stop("LLM returned empty content.")
-    }
-
-    if(!jsonlite::validate(llm_json_string)) {
-      # Include raw response for debugging if possible
-      writeLines(llm_json_string, con = paste0(id, "_llm_response_debug.txt")) # Save raw response for debugging
-      raw_response_snippet <- substr(llm_json_string, 1, 200)
-      stop(glue::glue("LLM response was not valid JSON. Response start: '{raw_response_snippet}...'"))
-    }
-
-    # 7. Parse *before* saving? Yes, save the parsed object for consistency.
     parsed_data <- tryCatch({
-      jsonlite::fromJSON(llm_json_string, simplifyVector = FALSE)
-    }, error = function(e) stop(glue::glue("Error parsing valid JSON response: {e$message}")) )
+      withr::local_options(ellmer_timeout_s = ellmer_timeout_s)
+      chat$extract_data(
+        uploaded_file_info,
+        extraction_prompt,
+        type = type_extraction,
+      )
+    }, error = function(e) {
+      rlang::abort(c(glue::glue("Failed to get response from LLM for extraction of '{id}'."),
+                     "i" = e$message), parent = e)
+    })
 
     # Add metadata about extraction run
     parsed_data$extraction_timestamp <- Sys.time()
-    parsed_data$extraction_model <- mdl
-    parsed_data$extraction_service <- svc
-    parsed_data$extration_prompt_tokens <- llm_response_body[["usageMetadata"]][["promptTokenCount"]]
-    parsed_data$extration_candidate_tokens <- llm_response_body[["usageMetadata"]][["candidatesTokenCount"]]
-    parsed_data$extration_thoughts_tokens <- llm_response_body[["usageMetadata"]][["thoughtsTokenCount"]]
-    parsed_data$extration_total_tokens <- llm_response_body[["usageMetadata"]][["totalTokenCount"]]
+    parsed_data$extraction_model <- chat$get_model()
+    parsed_data$extration_total_tokens <- sum(chat$last_turn()@tokens)
 
     # 8. Save Parsed Data to Cache
     save_path <- .save_to_cache(
@@ -192,8 +162,6 @@ df_extract_batch <- function(identifiers,
     paper_path = paper_paths[identifiers], # Ensure correct paths are matched
     meta_path = rep(metawoRld_path, n_total),
     force = rep(force_extract, n_total),
-    svc = rep(service, n_total),
-    mdl = rep(model, n_total),
     # How to pass ... to pmap? Need to capture them and replicate.
     dots_args = rep(list(rlang::list2(...)), n_total) # Capture ... and replicate
   )
@@ -210,8 +178,6 @@ df_extract_batch <- function(identifiers,
       paper_path = pmap_inputs$paper_path[[i]],
       meta_path = pmap_inputs$meta_path[[i]],
       force = pmap_inputs$force[[i]],
-      svc = pmap_inputs$svc[[i]],
-      mdl = pmap_inputs$mdl[[i]],
       !!!pmap_inputs$dots_args[[i]] # Splice the extra arguments
     )
     results_list[[id]] <- res # Store result named by identifier

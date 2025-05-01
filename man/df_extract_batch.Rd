@@ -5,13 +5,17 @@
 \title{Extract Data for a Batch of Studies using LLM}
 \usage{
 df_extract_batch(
+  chat,
   identifiers,
   paper_paths,
   metawoRld_path,
+  extraction_prompt_path = system.file(fs::path("prompts", "_extraction_prompt.txt"),
+    package = "DataFindR"),
+  extraction_schema_path = system.file(fs::path("prompts", "_extraction_schema.yml"),
+    package = "DataFindR"),
   force_extract = FALSE,
-  service = "openai",
-  model = "gpt-4-turbo",
   stop_on_error = FALSE,
+  ellmer_timeout_s = 300,
   ...
 )
 }
@@ -28,15 +32,15 @@ paths to the corresponding full-text \strong{plain text (.txt) files}.}
 \item{force_extract}{Logical. If TRUE, bypass the extraction cache and re-run
 LLM extraction even if cached JSON exists. Defaults to FALSE.}
 
-\item{service}{Character string. The LLM service to use (e.g., "openai").}
-
-\item{model}{Character string. The specific LLM model name (e.g., "gpt-4-turbo").}
-
 \item{stop_on_error}{Logical. If TRUE, stop the batch if any single extraction fails.
 Defaults to FALSE.}
 
 \item{...}{Additional arguments passed down to the LLM API call function
 (e.g., \code{temperature}, \code{max_tokens}).}
+
+\item{service}{Character string. The LLM service to use (e.g., "openai").}
+
+\item{model}{Character string. The specific LLM model name (e.g., "gpt-4-turbo").}
 }
 \value{
 A data frame (tibble) summarizing the extraction attempt for each

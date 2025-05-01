@@ -5,6 +5,7 @@
 #' criteria, calls an LLM API to assess relevance based on Title/Abstract,
 #' parses the response, and caches results.
 #'
+#' @param chat An `ellmer` chat object.
 #' @param identifier Character string. The DOI or PMID of the study.
 #' @param metawoRld_path Character string. Path to the root of the metawoRld project.
 #' @param force_fetch Logical. If TRUE, bypass the metadata cache and re-fetch
@@ -69,12 +70,13 @@
 #' # --- Clean up ---
 #' unlink(proj_path, recursive = TRUE)
 #' }
-df_assess_relevance <- function(identifier,
+df_assess_relevance <- function(chat,
+                                identifier,
                                 metawoRld_path,
+                                assessment_prompt_path = system.file(fs::path("prompts", "_assessment_prompt.txt"), package = "DataFindR"),
+                                assessment_schema_path = system.file(fs::path("prompts", "_assessment_schema.yml"), package = "DataFindR"),
                                 force_fetch = FALSE,
                                 force_assess = FALSE,
-                                service = "google",
-                                model = "gemini-2.5-flash-preview-04-17",
                                 email = NULL,
                                 ncbi_api_key = NULL,
                                 ...) {
@@ -153,7 +155,6 @@ df_assess_relevance <- function(identifier,
     rlang::abort("No inclusion or exclusion criteria found in _metawoRld.yml. Cannot perform assessment.")
   }
 
-
   # --- 4. Generate Assessment Prompt ---
   assessment_prompt <- .generate_assessment_prompt(
     title = metadata$title,
@@ -162,42 +163,15 @@ df_assess_relevance <- function(identifier,
     exclusion_criteria = exclusion_criteria
   )
 
-  # --- 5. Call LLM API ---
-  # Prepare arguments for the LLM call wrapper
-  llm_args <- rlang::list2(
-    prompt = assessment_prompt,
-    model = model,
-    response_format = "json_object", # Request JSON output
-    instructions = "You are a scientific literature screening assistant.", # System prompt
-    ... # Pass through any extra args like temperature
-  )
-
-  llm_response_body <- tryCatch({
-    # Currently hardcoded to openai, extend later if needed
-    if (tolower(service) == "openai") {
-      .call_llm_openai(!!!llm_args) # Splice the arguments
-    }else if (tolower(service) == "google") {
-      inject(.call_llm_google(!!!llm_args)) # Splice the arguments
-    } else {
-      rlang::abort(glue::glue("LLM service '{service}' is not currently supported."))
-    }
-  }, error = function(e){
-    rlang::abort(c(glue::glue("LLM API call failed during assessment for '{identifier}'."),
-                   "i" = e$message), parent = e)
-  })
-
-
-  # --- 6. Parse and Validate LLM Response ---
-  llm_content_string <- .get_llm_content_gemini(llm_response_body) %||% ""
-  if (llm_content_string == "") {
-    rlang::abort(glue::glue("LLM returned an empty response content for assessment of '{identifier}'."))
-  }
+  type_assessment <- parse_yaml_to_ellmer_schema(assessment_schema_path)
 
   parsed_assessment <- tryCatch({
-    jsonlite::fromJSON(llm_content_string, simplifyVector = FALSE)
+    chat$extract_data(
+      assessment_prompt,
+      type = type_assessment,
+    )
   }, error = function(e) {
-    rlang::abort(c(glue::glue("Failed to parse JSON response from LLM for assessment of '{identifier}'."),
-                   "i" = glue::glue("LLM Raw Content: {llm_content_string}"),
+    rlang::abort(c(glue::glue("Failed to get response from LLM for assessment of '{identifier}'."),
                    "i" = e$message), parent = e)
   })
 
@@ -217,11 +191,11 @@ df_assess_relevance <- function(identifier,
   }
 
   # Add timestamp and model info?
+  tokens_info <- chat$tokens()
   parsed_assessment$assessment_timestamp <- Sys.time()
-  parsed_assessment$assessment_model <- model
-  parsed_assessment$assessment_tokens <- llm_response_body[["usageMetadata"]][["totalTokenCount"]]
-  parsed_assessment$assessment_service <- service
-
+  parsed_assessment$assessment_model <- chat$get_model()
+  parsed_assessment$assessment_prompt_tokens <- chat$last_turn()@tokens[1]
+  parsed_assessment$assessment_candidate_tokens <- chat$last_turn()@tokens[2]
 
   # --- 7. Save Validated Assessment to Cache ---
   .save_to_cache(identifier = identifier, data = parsed_assessment, type = "assessment", metawoRld_path = proj_path)

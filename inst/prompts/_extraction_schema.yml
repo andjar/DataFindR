@@ -1,0 +1,184 @@
+# Top-level object definition
+_type: object
+_description: "Extract metadata and data points from a scientific paper..." # Overall description
+
+# --- METADATA ---
+metadata:
+  _type: object
+  _description: "Metadata about the scientific study."
+  # `_required` defaults to true if omitted at the field level,
+  # set explicitly to false for optional fields.
+  study_id:
+    _type: string
+    _description: "Unique study identifier. Use PMID/DOI (prefer DOI) or FirstAuthorLastNameYear."
+    _required: true
+  title:
+    _type: string
+    _description: "Full study title."
+    _required: true
+  authors:
+    _type: array
+    _description: "List of author names as strings (e.g., 'J. Doe', 'Smith J')."
+    _required: true
+    _items:
+      _type: string
+      _description: "Author name string."
+  year:
+    _type: integer
+    _description: "Publication year."
+    _required: true
+  journal:
+    _type: string
+    _description: "Journal name."
+    _required: true
+  country:
+    _type: array
+    _description: "List of countries where the study was conducted."
+    _required: true
+    _items:
+      _type: string
+      _description: "Country name."
+  study_design:
+    _type: string
+    _description: "Primary study design reported (e.g., 'Case-Control', 'Cohort')."
+    _required: true
+  sample_type:
+    _type: array
+    _description: "List of biological sample types analyzed."
+    _required: true
+    _items:
+      _type: string
+      _description: "Sample type (e.g., 'Serum', 'Plasma')."
+  measurement_methods:
+    _type: array
+    _description: "Define the measurement assays used."
+    _required: true
+    _items:
+      _type: object
+      _description: "Details of a specific measurement method."
+      measurement_method_ref_id:
+        _type: string
+        _description: "Unique short ID for this method (e.g., 'elisa_il6_rd'). Used in data_points."
+        _required: true
+      analysis_type:
+        _type: string
+        _description: "Type of analysis (e.g., 'ELISA', 'Mass Spectrometry')."
+        _required: true
+      full_name:
+        _type: string
+        _description: "Full name or description of the method/kit."
+        _required: false # Optional
+      target_biomarker:
+        _type: array
+        _description: "List of specific biomarkers measured (e.g., 'IL-6')."
+        _required: true
+        _items:
+          _type: string
+          _description: "Specific biomarker measured (e.g., 'IL-6')."
+      unit:
+        _type: string
+        _description: "Unit of measurement (e.g., 'pg/mL')."
+        _required: true
+  outcome_groups:
+    _type: array
+    _description: "Define the distinct outcome/comparison groups."
+    _required: true
+    _items:
+      _type: object
+      _description: "Details of a specific outcome group."
+      outcome_group_ref_id:
+        _type: string
+        _description: "Unique short ID for this group (e.g., 'cases', 'controls'). Used in data_points."
+        _required: true
+      name:
+        _type: string
+        _description: "Descriptive name of the group (e.g., 'Preeclampsia Cases')."
+        _required: true
+      definition:
+        _type: string
+        _description: "Brief definition or criteria for group membership."
+        _required: false # Optional
+  # --- Optional Metadata ---
+  doi:
+    _type: string
+    _description: "Digital Object Identifier, if available."
+    _required: false
+  abstract:
+    _type: string
+    _description: "Full abstract text, if available."
+    _required: false
+  keywords_paper:
+    _type: array
+    _description: "List of keywords provided by the paper."
+    _required: false
+    _items:
+      _type: string
+  inclusion_summary:
+    _type: string
+    _description: "Brief summary of main inclusion criteria."
+    _required: false
+  exclusion_summary:
+    _type: string
+    _description: "Brief summary of main exclusion criteria."
+    _required: false
+
+# --- DATA POINTS ---
+data_points:
+  _type: array
+  _description: "Array of specific quantitative results extracted."
+  _required: true
+  _items:
+    _type: object
+    _description: "A single quantitative data point (result OR population characteristic)."
+    measurement_id:
+      _type: string
+      _description: "Unique sequential ID for this data point (e.g., 'dp1')."
+      _required: true
+    measurement_method_ref_id:
+      _type: string
+      _description: "ID matching metadata.measurement_methods OR a specific ID like 'POP_CHAR' for population characteristics."
+      _required: true
+    variable_name:
+      _type: string
+      _description: "Name of measured variable OR population characteristic (e.g., 'IL-6', 'Age', 'BMI', 'Sex - Female')."
+      _required: true
+    outcome_group_ref_id:
+      _type: string
+      _description: "ID matching metadata.outcome_groups."
+      _required: true
+    n:
+      _type: integer
+      _description: "Sample size (N) for this group/statistic."
+      _required: true
+    statistic_type:
+      _type: string
+      # Example using enum if you have a fixed list
+      # _type: enum
+      # _values: ["mean_sd", "median_iqr", "mean_sem", "n_percent", "correlation_r"]
+      _description: "Type of statistic reported (e.g., 'mean_sd', 'median_iqr')."
+      _required: true
+    value1:
+      _type: number
+      _description: "Primary numeric value (Mean, Median, N, etc.)."
+      _required: true
+    # --- Optional Data Point Fields ---
+    value2:
+      _type: string # Using string for flexibility (SD, SEM, range 'L-U', %)
+      _description: "Secondary value (SD, SEM, IQR bounds 'lower-upper', Percentage). Use null if N/A."
+      _required: false
+    unit:
+      _type: string
+      _description: "Unit for this measurement (e.g., 'pg/mL')."
+      _required: false # Optional here, should be in metadata
+    comparison_group_label:
+      _type: string
+      _description: "ID of comparison group for p-value."
+      _required: false
+    comparison_p_value:
+      _type: string # String allows '<0.001', 'NS'
+      _description: "P-value for comparison."
+      _required: false
+    notes:
+      _type: string
+      _description: "Specific notes (e.g., 'Adjusted', 'Timepoint: T1')."
+      _required: false

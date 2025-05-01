@@ -18,7 +18,8 @@ Imports:
     rentrez (>= 1.2.3),
     rlang,
     shiny,
-    dplyr
+    dplyr,
+    ellmer
 Remotes:
     andjar/metawoRld
 Suggests: 

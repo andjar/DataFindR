@@ -1,0 +1,23 @@
+- name: decision
+  description: 'Your assessment category. Choose ONE of: Include: High confidence
+    the study meets inclusion criteria and avoids exclusion criteria based on Title/Abstract.
+    Exclude: High confidence the study meets one or more exclusion criteria OR clearly
+    fails critical inclusion criteria based on Title/Abstract. Needs Manual Review:
+    Unclear from Title/Abstract whether criteria are met (e.g., mentions relevant
+    concepts but lacks specific details, borderline case).'
+  type: enum
+  options:
+  - Include
+  - Needs manual review
+  - Exclude
+  required: true
+- name: score
+  description: 'Your confidence score (0.0 to 1.0) reflecting the likelihood of inclusion.
+    Examples: ~0.9+ for Include, ~0.1- for Exclude, 0.3-0.7 for Needs Manual Review.'
+  type: number
+  required: true
+- name: rationale
+  description: A BRIEF explanation (1-2 sentences) justifying your decision and score,
+    referencing specific criteria or information (or lack thereof) in the Title/Abstract.
+  type: string
+  required: true
