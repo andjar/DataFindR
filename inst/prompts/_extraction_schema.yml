@@ -146,7 +146,7 @@ data_points:
       _type: string
       _description: "ID matching metadata.outcome_groups."
       _required: true
-    n:
+    n_sample_size:
       _type: integer
       _description: "Sample size (N) for this group/statistic."
       _required: true

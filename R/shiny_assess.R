@@ -4,9 +4,9 @@
 #' @importFrom rlang inform warn abort is_list `%||%` check_installed is_scalar_character
 #' @importFrom yaml read_yaml
 #' @importFrom fs path_norm dir_exists file_exists path
-#' @importFrom utils packageVersion browseURL askYesNo # Added askYesNo
+#' @importFrom utils packageVersion browseURL askYesNo
 #' @importFrom tools file_path_sans_ext
-#' @importFrom jsonlite fromJSON toJSON # Added jsonlite imports explicitly
+#' @importFrom jsonlite fromJSON toJSON
 
 df_shiny_assess <- function(launch.browser = TRUE, ...) {
 

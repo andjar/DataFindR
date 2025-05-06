@@ -1,10 +1,10 @@
 Package: DataFindR
-Title: What the Package Does (One Line, Title Case)
+Title: Automated LLM Study Assessment and Data Extraction
 Version: 0.0.0.9000
 Authors@R: 
     person("Anders Hagen", "Jarmund", , "anders.h.jarmund@ntnu.no", role = c("aut", "cre"),
     comment = c(ORCID = "0000-0002-3923-1637"))
-Description: What the package does (one paragraph).
+Description: Works in combination with the metawoRld package.
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

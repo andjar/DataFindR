@@ -1,133 +1,200 @@
-#' Validate Parsed LLM Extraction JSON Against Schema
+#' Validate extracted data against a schema definition (list format).
 #'
-#' Checks if the parsed list object from the LLM's extraction JSON conforms
-#' structurally to the project's schema and internal linkage rules.
+#' Checks if the structure, types, and required fields of the extracted data
+#' conform to the rules defined in the schema list (parsed from YAML).
 #'
-#' @param extracted_data List. The parsed R list object from the extraction JSON.
-#'   Expected to have `metadata` and `data_points` top-level keys.
-#' @param schema List. The project schema obtained via `metawoRld::get_schema()`.
-#' @param identifier Character string. The study identifier (for error messages).
+#' @param extracted_data The list/data frame structure returned by `ellmer::extract_data`.
+#' @param schema The schema definition as an R list, typically loaded from YAML
+#'   using a function like `get_schema`.
 #'
-#' @return Invisibly returns `TRUE` if validation passes. Aborts with an
-#'   informative error message if validation fails.
-#' @noRd
-#' @keywords internal
+#' @return A list of validation error messages. An empty list indicates successful
+#'   validation. Each error message includes the path to the problematic node.
+#' @export
 #'
-#' @importFrom rlang is_list `%||%` abort inform glue
-#' @importFrom purrr map map_lgl every
-.validate_extracted_data <- function(extracted_data, schema, identifier) {
+#' @examples
+#' \dontrun{
+#' # Assume schema_list is loaded from YAML using get_schema()
+#' # Assume llm_output is the result from chat$extract_data(..., type = ellmer_schema)
+#'
+#' schema_definition <- get_schema(".") # Or path to your schema YAML
+#' # llm_output <- chat$extract_data(...) # Run your extraction
+#'
+#' validation_errors <- validate_extracted_data(llm_output, schema_definition)
+#'
+#' if (length(validation_errors) == 0) {
+#'   print("Validation successful!")
+#' } else {
+#'   print("Validation failed with the following errors:")
+#'   purrr::walk(validation_errors, print) # Requires purrr package
+#'   # Or use base R:
+#'   # invisible(lapply(validation_errors, print))
+#' }
+#' }
+.validate_extracted_data <- function(extracted_data, schema) {
 
-  rlang::inform(glue::glue("Validating extracted data structure for '{identifier}'..."))
+  if (!rlang::is_list(schema)) {
+    stop("`schema` must be a list (typically parsed from YAML).", call. = FALSE)
+  }
+  # Extracted data can be a list or potentially a data frame at the top level
+  # if the schema defines an array of objects. We'll check specific types inside.
 
-  # --- Basic Structure Checks ---
-  if (!rlang::is_list(extracted_data)) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): Extracted data is not a list."))
-  }
-  if (!all(c("metadata", "data_points") %in% names(extracted_data))) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): Extracted data missing 'metadata' or 'data_points' top-level keys."))
-  }
-  if (!rlang::is_list(extracted_data$metadata)) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): 'metadata' section is not a list."))
-  }
-  if (!rlang::is_list(extracted_data$data_points)) {
-    # Allow empty list if no data points were found, but check individual items later
-    if (length(extracted_data$data_points) > 0 && !all(purrr::map_lgl(extracted_data$data_points, rlang::is_list))) {
-      rlang::abort(glue::glue("Validation Error ({identifier}): 'data_points' section is not a list of lists."))
-    }
-  }
+  errors <- list()
 
-  # --- Metadata Field Checks ---
-  meta_fields_def <- schema$metadata_fields %||% list()
-  req_meta <- meta_fields_def$required %||% character()
-  provided_meta <- names(extracted_data$metadata)
-  missing_req_meta <- setdiff(req_meta, provided_meta)
-  if (length(missing_req_meta) > 0) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): Metadata section missing required fields: {paste(missing_req_meta, collapse=', ')}"))
-  }
-  # Check if study_id is present and non-empty (needed later)
-  if(!"study_id" %in% req_meta || is.null(extracted_data$metadata$study_id) || extracted_data$metadata$study_id == ""){
-    rlang::abort(glue::glue("Validation Error ({identifier}): Required field 'study_id' is missing or empty in the extracted metadata."))
-  }
+  # --- Recursive Helper Function ---
+  validate_node <- function(data_node, schema_node, path = "root") {
 
-  # --- Data Point Field Checks ---
-  data_fields_def <- schema$data_fields %||% list()
-  req_data <- data_fields_def$required %||% character(0)
+    node_errors <- list()
 
-  if (length(extracted_data$data_points) > 0) {
-    # Check fields for each data point item
-    all_items_valid <- purrr::every(seq_along(extracted_data$data_points), ~{
-      item <- extracted_data$data_points[[.x]]
-      if (!rlang::is_list(item)) return(FALSE) # Already checked above, but be safe
-      provided_data <- names(item)
-      missing_req_data <- setdiff(req_data, provided_data)
-      if (length(missing_req_data) > 0) {
-        rlang::abort(glue::glue("Validation Error ({identifier}): Data point #{.x} missing required fields: {paste(missing_req_data, collapse=', ')}"))
-        # return(FALSE) # Not reachable due to abort
+    # --- Check NULL data ---
+    # If data is NULL, it's only valid if the schema node is NOT required.
+    if (is.null(data_node) || rlang::is_empty(data_node)) {
+      is_required <- !identical(schema_node$`_required`, FALSE) # Default required = TRUE
+      if (is_required) {
+        node_errors <- c(node_errors, paste0(path, ": Is required but data is NULL."))
       }
-      return(TRUE)
-    })
-    # if (!all_items_valid) { } # Not reachable due to abort
-  } else {
-    rlang::inform(glue::glue("Validation Info ({identifier}): 'data_points' array is empty. No quantitative data found or extracted."))
-  }
-
-  # --- Linkage Checks ---
-  rlang::inform(glue::glue("Validating linkages for '{identifier}'..."))
-  # 1. Check if required structures for linkage exist
-  if (!"measurement_methods" %in% names(extracted_data$metadata) || !rlang::is_list(extracted_data$metadata$measurement_methods)) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): Metadata is missing 'measurement_methods' list, needed for linkage."))
-  }
-  if (!"outcome_groups" %in% names(extracted_data$metadata) || !rlang::is_list(extracted_data$metadata$outcome_groups)) {
-    rlang::abort(glue::glue("Validation Error ({identifier}): Metadata is missing 'outcome_groups' list, needed for linkage."))
-  }
-
-  # Only proceed if data points exist
-  if (length(extracted_data$data_points) > 0) {
-    valid_method_ids <- names(extracted_data$metadata$measurement_methods) %||% character(0)
-    valid_group_labels <- names(extracted_data$metadata$outcome_groups) %||% character(0)
-
-    if(length(valid_method_ids) == 0 && any(purrr::map_lgl(extracted_data$data_points, ~!is.null(.x$method_ref_id)))){
-      rlang::warn(glue::glue("Validation Warning ({identifier}): No methods defined in metadata$measurement_methods, but data points have method_ref_id."))
-      # Allow to proceed, but linkage is broken. Or abort? Let's abort for strictness.
-      rlang::abort(glue::glue("Validation Error ({identifier}): No methods defined in metadata$measurement_methods keys, but 'method_ref_id' is present in data_points."))
-
-    }
-    if(length(valid_group_labels) == 0 && any(purrr::map_lgl(extracted_data$data_points, ~!is.null(.x$group_label)))){
-      rlang::abort(glue::glue("Validation Error ({identifier}): No groups defined in metadata$outcome_groups keys, but 'group_label' is present in data_points."))
+      # If optional and NULL, it's valid, so return empty errors for this node
+      return(node_errors)
     }
 
-    # Check linkages for each data point item
-    linkage_check_passed <- purrr::every(seq_along(extracted_data$data_points), ~{
-      item <- extracted_data$data_points[[.x]]
-      item_valid <- TRUE
+    # --- Check Schema Type Exists ---
+    if (is.null(schema_node$`_type`)) {
+      # This indicates an issue with the schema itself, but we note it here.
+      # Should ideally be caught when parsing YAML to ellmer type.
+      node_errors <- c(node_errors, paste0(path, ": Schema definition is missing '_type' key."))
+      return(node_errors) # Cannot proceed without type info
+    }
 
-      # Check method_ref_id
-      method_ref <- item$method_ref_id %||% NA_character_
-      if (!is.na(method_ref) && !(method_ref %in% valid_method_ids)) {
-        rlang::abort(glue::glue("Validation Error ({identifier}): Data point #{.x} has 'method_ref_id' ('{method_ref}') not found in metadata$measurement_methods keys: {paste(valid_method_ids, collapse=', ')}"))
-        item_valid <- FALSE
+    schema_type <- schema_node$`_type`
+
+    # --- Type-Specific Validation ---
+    switch(
+      schema_type,
+      "object" = {
+        # Expecting a list (or potentially a single row data frame treated as list)
+        if (!rlang::is_list(data_node) && !(is.data.frame(data_node) && nrow(data_node) == 1)) {
+          node_errors <- c(node_errors, paste0(path, ": Expected an object (list/named list), but got ", class(data_node)[1], "."))
+          return(node_errors) # Cannot proceed if not list-like
+        }
+        # Coerce single row data frame to list for easier field access
+        if (is.data.frame(data_node) && nrow(data_node) == 1) {
+          data_node <- as.list(data_node)
+        }
+
+
+        schema_fields <- setdiff(names(schema_node), grep("^_", names(schema_node), value = TRUE))
+        data_fields <- names(data_node)
+
+        # Check Required Fields
+        for (field in schema_fields) {
+          field_schema <- schema_node[[field]]
+          is_required <- !identical(field_schema$`_required`, FALSE) # Defaults to TRUE
+          if (is_required && !(field %in% data_fields)) {
+            node_errors <- c(node_errors, paste0(path, ".", field, ": Required field is missing."))
+          }
+        }
+
+        # Validate Present Fields
+        for (field in data_fields) {
+          if (field %in% schema_fields) {
+            field_schema <- schema_node[[field]]
+            field_data <- data_node[[field]]
+            field_path <- paste0(path, ".", field)
+            # Recursive call
+            node_errors <- c(node_errors, validate_node(field_data, field_schema, field_path))
+          } else {
+            # Optional: Warn about fields present in data but not schema
+            # node_errors <- c(node_errors, paste0(path, ".", field, ": Field present in data but not defined in schema."))
+          }
+        }
+      }, # End object case
+
+      "array" = {
+        items_schema <- schema_node$`_items`
+        if (is.null(items_schema)) {
+          node_errors <- c(node_errors, paste0(path, ": Array schema definition missing '_items' key."))
+          return(node_errors)
+        }
+
+        # Handle vectors, lists, and data frames (common outputs from ellmer)
+        if (is.data.frame(data_node)) {
+          # Iterate through rows
+          if (nrow(data_node) > 0) {
+            for (i in 1:nrow(data_node)) {
+              # Convert row to list for consistent validation with object items
+              # Use drop=FALSE defensively if validation expects list-like rows
+              row_data <- tryCatch(as.list(data_node[i, , drop = FALSE]), error = function(e) data_node[i,]) # Fallback for simple vectors
+              if(is.data.frame(row_data) && ncol(row_data) == 1) row_data <- as.list(row_data) # Ensure it becomes a list if single column df row
+
+              item_path <- paste0(path, "[", i, "]")
+              node_errors <- c(node_errors, validate_node(row_data, items_schema, item_path))
+            }
+          } # else: empty data frame is valid for an array
+        } else if (rlang::is_list(data_node) || is.atomic(data_node)) {
+          # Iterate through list elements or vector elements
+          if (length(data_node) > 0) {
+            for (i in 1:length(data_node)) {
+              item_data <- data_node[[i]]
+              item_path <- paste0(path, "[", i, "]")
+              node_errors <- c(node_errors, validate_node(item_data, items_schema, item_path))
+            }
+          } # else: empty list/vector is valid
+        } else {
+          node_errors <- c(node_errors, paste0(path, ": Expected an array (vector, list, or data.frame), but got ", class(data_node)[1], "."))
+        }
+      }, # End array case
+
+      "string" = {
+        if (!rlang::is_scalar_character(data_node)) {
+          node_errors <- c(node_errors, paste0(path, ": Expected a single string (character), but got ", class(data_node)[1], "."))
+        }
+      },
+
+      "integer" = {
+        # Allow numeric values that are whole numbers
+        is_valid_integer <- rlang::is_scalar_integer(data_node) ||
+          (rlang::is_scalar_double(data_node) && !is.na(data_node) && data_node == floor(data_node))
+        if (!is_valid_integer) {
+          node_errors <- c(node_errors, paste0(path, ": Expected a single integer, but got ", class(data_node)[1], " with value '", data_node, "'."))
+        }
+      },
+
+      "number" = {
+        # Allows integer or double
+        if (!rlang::is_scalar_double(data_node) && !rlang::is_scalar_integer(data_node)) {
+          node_errors <- c(node_errors, paste0(path, ": Expected a single number (numeric/double/integer), but got ", class(data_node)[1], "."))
+        }
+      },
+
+      "boolean" = {
+        if (!rlang::is_scalar_logical(data_node)) {
+          node_errors <- c(node_errors, paste0(path, ": Expected a single boolean (logical), but got ", class(data_node)[1], "."))
+        }
+      },
+
+      "enum" = {
+        allowed_values <- schema_node$`_values`
+        if (is.null(allowed_values)) {
+          node_errors <- c(node_errors, paste0(path, ": Enum schema definition missing '_values' key."))
+        } else if (!rlang::is_scalar_character(data_node)) {
+          node_errors <- c(node_errors, paste0(path, ": Expected a single string for enum value, but got ", class(data_node)[1], "."))
+        } else if (!(data_node %in% allowed_values)) {
+          node_errors <- c(node_errors, paste0(path, ": Value '", data_node, "' is not in the allowed enum values: [", paste(allowed_values, collapse=", "), "]."))
+        }
+      },
+
+      # Default case for unknown schema types
+      {
+        node_errors <- c(node_errors, paste0(path, ": Unknown schema type '", schema_type, "' encountered."))
       }
+    ) # End switch
 
-      # Check group_label
-      group_ref <- item$group_label %||% NA_character_
-      if (!is.na(group_ref) && !(group_ref %in% valid_group_labels)) {
-        rlang::abort(glue::glue("Validation Error ({identifier}): Data point #{.x} has 'group_label' ('{group_ref}') not found in metadata$outcome_groups keys: {paste(valid_group_labels, collapse=', ')}"))
-        item_valid <- FALSE
-      }
+    return(node_errors)
 
-      # Check comparison_group_label (if present)
-      # comp_group_ref <- item$comparison_group_label %||% NA_character_
-      # if (!is.na(comp_group_ref) && !(comp_group_ref %in% valid_group_labels)) {
-      #   rlang::warn(glue::glue("Validation Warning ({identifier}): Data point #{.x} has 'comparison_group_label' ('{comp_group_ref}') not found in metadata$outcome_groups keys: {paste(valid_group_labels, collapse=', ')}"))
-      #   # Don't abort for optional field link failure, just warn.
-      #   # item_valid <- FALSE
-      # }
-      item_valid # Return status for this item (currently always TRUE unless abort occurs)
-    })
-    # if (!linkage_check_passed) { } # Not reachable due to aborts
+  } # --- End validate_node Helper ---
 
-  }
 
-  rlang::inform(glue::glue("Validation checks passed for '{identifier}'."))
-  invisible(TRUE)
+  # --- Start Validation from Root ---
+  all_errors <- validate_node(extracted_data, schema, path = "root")
+
+  return(all_errors)
 }

@@ -228,7 +228,7 @@ df_clear_cache <- function(identifier = NULL, type = NULL, metawoRld_path) {
 #' @importFrom rlang warn inform is_list `%||%`
 #' @importFrom purrr map map_lgl keep discard set_names
 #' @importFrom tools file_path_sans_ext
-#' @importFrom metawoRld .desanitize_id .sanitize_id # Need export or copy
+#' @importFrom metawoRld .desanitize_id .sanitize_id
 .find_pending_extraction_studies <- function(metawoRld_path,
                                              decision_threshold = c("Include")) {
 
@@ -333,11 +333,8 @@ df_clear_cache <- function(identifier = NULL, type = NULL, metawoRld_path) {
 #' @importFrom fs dir_exists dir_ls path path_file path_ext_remove path_rel
 #' @importFrom glue glue
 #' @importFrom jsonlite fromJSON
-#' @importFrom stringr str_match # For robust filename parsing
+#' @importFrom stringr str_match
 #' @importFrom utils readLines
-#' # Assuming .get_datafindr_cache_path is an internal function within this package,
-#' # it does not need to be imported via @importFrom, but needs to be available.
-
 read_all_from_cache <- function(type = c("assessment", "extraction", "metadata"), metawoRld_path) {
 
   # Get the base cache directory path, don't create it

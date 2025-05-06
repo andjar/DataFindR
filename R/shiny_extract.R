@@ -28,10 +28,10 @@
 #' @importFrom yaml read_yaml
 #' @importFrom fs path_norm dir_exists file_exists path path_ext file_size
 #' @importFrom utils packageVersion browseURL askYesNo
-#' @importFrom jsonlite fromJSON toJSON validate # Added validate
+#' @importFrom jsonlite fromJSON toJSON validate
 #' @importFrom tools file_path_sans_ext
-#' @importFrom purrr compact # Added compact
-#' @importFrom metawoRld .desanitize_id .sanitize_id # Need export or copy
+#' @importFrom purrr compact
+#' @importFrom metawoRld .desanitize_id .sanitize_id
 df_shiny_extract <- function(launch.browser = TRUE, ...) {
 
   # --- Check suggested packages ---

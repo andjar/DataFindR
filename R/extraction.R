@@ -32,20 +32,18 @@
 #' Also prints progress and summary information.
 #'
 #' @export
-#' @importFrom purrr map safely list_transpose keep discard set_names map_chr map_lgl compact walk pmap # Added pmap walk
-#' @importFrom dplyr bind_rows tibble mutate select relocate if_else everything rename # Added rename
-#' @importFrom rlang inform warn is_character abort is_logical is_named `%||%` list2 !!! is_null # Added is_named is_null
+#' @importFrom purrr map safely list_transpose keep discard set_names map_chr map_lgl compact walk pmap
+#' @importFrom dplyr bind_rows tibble mutate select relocate if_else everything rename
+#' @importFrom rlang inform warn is_character abort is_logical is_named `%||%` list2 !!! is_null
 #' @importFrom glue glue
 #' @importFrom fs file_exists path_ext path_norm
 #' @import cli
-#' @importFrom jsonlite validate # Added validate
-#' @importFrom metawoRld .sanitize_id # Need export or copy
+#' @importFrom jsonlite validate
+#' @importFrom metawoRld .sanitize_id
 df_extract_batch <- function(chat,
                              identifiers,
                              paper_paths,
                              metawoRld_path,
-                             extraction_prompt_path = system.file(fs::path("prompts", "_extraction_prompt.txt"), package = "DataFindR"),
-                             extraction_schema_path = system.file(fs::path("prompts", "_extraction_schema.yml"), package = "DataFindR"),
                              force_extract = FALSE,
                              stop_on_error = FALSE,
                              ellmer_timeout_s = 300,
@@ -63,6 +61,10 @@ df_extract_batch <- function(chat,
 
   n_total <- length(identifiers)
   rlang::inform(glue::glue("Starting batch extraction for {n_total} identifier(s)..."))
+
+  chat <- chat$clone()
+  extraction_prompt_path <- fs::path(metawoRld_path, "_extraction_prompt.txt")
+  extraction_schema_path <- fs::path(metawoRld_path, "_extraction_schema.yml")
 
   # --- Internal Extraction Worker Function (with error handling) ---
   .extract_single_safe <- function(id, paper_path, meta_path, force, svc, mdl, ...) {

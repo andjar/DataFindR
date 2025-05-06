@@ -5,12 +5,11 @@
 \title{Assess Relevance for a Batch of Study Identifiers}
 \usage{
 df_assess_batch(
+  chat,
   identifiers,
   metawoRld_path,
   force_fetch = FALSE,
   force_assess = FALSE,
-  service = "openai",
-  model = "gpt-3.5-turbo",
   email = NULL,
   ncbi_api_key = NULL,
   stop_on_error = FALSE,
@@ -26,10 +25,6 @@ df_assess_batch(
 
 \item{force_assess}{Logical. If TRUE, bypass the assessment cache for all identifiers.}
 
-\item{service}{Character string. The LLM service to use (e.g., "openai").}
-
-\item{model}{Character string. The specific LLM model name.}
-
 \item{email}{Character string (optional). Email for NCBI Entrez.}
 
 \item{ncbi_api_key}{Character string (optional). NCBI API key.}
@@ -40,6 +35,10 @@ and reports errors in the summary.}
 
 \item{...}{Additional arguments passed down to \code{df_assess_relevance} and
 subsequently to the LLM API call function (e.g., \code{temperature}).}
+
+\item{service}{Character string. The LLM service to use (e.g., "openai").}
+
+\item{model}{Character string. The specific LLM model name.}
 }
 \value{
 A data frame (tibble) summarizing the assessment results for each

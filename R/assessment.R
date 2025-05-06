@@ -27,7 +27,7 @@
 #' @importFrom jsonlite fromJSON toJSON
 #' @importFrom rlang is_list list2 warn inform abort %||% check_installed set_names
 #' @importFrom glue glue
-#' @importFrom metawoRld .sanitize_id # Need export or copy
+#' @importFrom metawoRld .sanitize_id
 #'
 #' @examples
 #' \dontrun{
@@ -73,8 +73,6 @@
 df_assess_relevance <- function(chat,
                                 identifier,
                                 metawoRld_path,
-                                assessment_prompt_path = system.file(fs::path("prompts", "_assessment_prompt.txt"), package = "DataFindR"),
-                                assessment_schema_path = system.file(fs::path("prompts", "_assessment_schema.yml"), package = "DataFindR"),
                                 force_fetch = FALSE,
                                 force_assess = FALSE,
                                 email = NULL,
@@ -96,6 +94,10 @@ df_assess_relevance <- function(chat,
   if (!fs::file_exists(config_path)) {
     rlang::abort(glue::glue("Project configuration file '_metawoRld.yml' not found in: {proj_path}"))
   }
+
+  chat <- chat$clone()
+  assessment_prompt_path <- fs::path(metawoRld_path, "_assessment_prompt.txt")
+  assessment_schema_path <- fs::path(metawoRld_path, "_assessment_schema.yml")
 
 
   # --- 1. Check Assessment Cache ---
@@ -244,7 +246,7 @@ df_assess_relevance <- function(chat,
 #' @importFrom dplyr bind_rows tibble mutate select relocate if_else everything
 #' @importFrom rlang inform warn is_character abort is_logical `%||%` list2 !!!
 #' @importFrom glue glue
-#' @import cli # For progress bar
+#' @import cli
 #'
 #' @examples
 #' \dontrun{
@@ -284,12 +286,11 @@ df_assess_relevance <- function(chat,
 #' # --- Clean up ---
 #' unlink(proj_path, recursive = TRUE)
 #' }
-df_assess_batch <- function(identifiers,
+df_assess_batch <- function(chat,
+                            identifiers,
                             metawoRld_path,
                             force_fetch = FALSE,
                             force_assess = FALSE,
-                            service = "openai",
-                            model = "gpt-3.5-turbo",
                             email = NULL,
                             ncbi_api_key = NULL,
                             stop_on_error = FALSE,
@@ -324,12 +325,11 @@ df_assess_batch <- function(identifiers,
     cli::cli_progress_update()
     # Capture result/error for this ID
     res <- safe_assess(
+      chat = chat,
       identifier = id,
       metawoRld_path = metawoRld_path,
       force_fetch = force_fetch,
       force_assess = force_assess,
-      service = service,
-      model = model,
       email = email,
       ncbi_api_key = ncbi_api_key,
       ... # Pass extra arguments

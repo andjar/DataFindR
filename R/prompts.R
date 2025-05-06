@@ -23,7 +23,6 @@
 #' @keywords internal
 #' @noRd
 #' @importFrom readr read_file
-#' @importFrom system.file system.file
 #' @importFrom fs path
 #' @importFrom glue glue
 #' @importFrom rlang `%||%`
@@ -72,9 +71,9 @@
 #' @export
 #' @importFrom glue glue
 #' @importFrom rlang `%||%` is_list abort is_scalar_character is_null
-#' @importFrom jsonlite toJSON # Used implicitly by glue here, but good practice
+#' @importFrom jsonlite toJSON
 #' @importFrom fs path_norm dir_exists file_exists path
-#' @import metawoRld # Import the package to use get_schema
+#' @import metawoRld
 #'
 #' @examples
 #' \dontrun{

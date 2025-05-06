@@ -24,10 +24,10 @@
 #' @importFrom fs path path_norm dir_exists file_exists
 #' @importFrom rlang is_list list2 inform warn abort `%||%` is_scalar_character is_scalar_logical
 #' @importFrom glue glue
-#' @importFrom dplyr bind_rows # For converting list of lists to data frame
-#' @importFrom purrr map_dfr # Alternative for converting list to data frame
-#' @importFrom data.table rbindlist # For converting list of lists to data frame
-#' @import metawoRld # Need get_schema, add_study_data, .sanitize_id
+#' @importFrom dplyr bind_rows
+#' @importFrom purrr map_dfr
+#' @importFrom data.table rbindlist
+#' @import metawoRld
 df_import_extraction <- function(identifier,
                                  metawoRld_path,
                                  overwrite = FALSE,
@@ -74,7 +74,7 @@ df_import_extraction <- function(identifier,
   # --- 2. Validate JSON (Optional) ---
   if (validate_json) {
     schema <- tryCatch({
-      metawoRld::get_schema(path = proj_path)
+      metawoRld::get_schema(path = proj_path, schema = "extraction")
     }, error = function(e) {
       rlang::abort(c(glue::glue("Failed to get schema from metawoRld project at: {proj_path}"), "i" = e$message), parent = e)
     })
@@ -83,7 +83,7 @@ df_import_extraction <- function(identifier,
     }
 
     # Use the validation helper - it will abort on failure
-    .validate_extracted_data(extracted_data, schema, identifier)
+    .validate_extracted_data(extracted_data, schema)
   } else {
     rlang::warn(glue::glue("Skipping JSON validation for '{identifier}' as requested."))
   }
@@ -120,7 +120,7 @@ df_import_extraction <- function(identifier,
   if(length(data_points_list) > 0) {
     # Use dplyr::bind_rows for robustness to missing optional columns
     data_df <- tryCatch({
-      dplyr::tibble(data.table::rbindlist(data_points_list, fill=TRUE))
+      data.table::rbindlist(data_points_list, fill = TRUE)
       # Consider type conversions here if needed, e.g., using readr::type_convert
       # Or rely on metawoRld::add_study_data / load_metawoRld for later handling
     }, error = function(e) {
@@ -143,7 +143,7 @@ df_import_extraction <- function(identifier,
 
 
   # --- 5. Get Study ID for Saving ---
-  study_id_to_save <- final_metadata_list$study_id
+  study_id_to_save <- metawoRld::.sanitize_id(final_metadata_list$study_id)
   if(is.null(study_id_to_save) || study_id_to_save == "") {
     rlang::abort(glue::glue("Cannot determine study_id from final metadata for identifier '{identifier}'. It is missing or empty after processing."))
   }
