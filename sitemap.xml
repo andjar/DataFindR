@@ -3,10 +3,19 @@
 <url><loc>https://andjar.github.io/DataFindR/LICENSE.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/authors.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/index.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/copy_datafindr_files.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/df_assess_batch.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/reference/df_assess_relevance.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/reference/df_clear_cache.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/df_extract_batch.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/reference/df_fetch_metadata.html</loc></url>
-<url><loc>https://andjar.github.io/DataFindR/reference/df_shiny_assess.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/df_import_batch.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/df_import_extraction.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/df_shiny_extract.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/dot-generate_extraction_prompt.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/dot-validate_extracted_data.html</loc></url>
 <url><loc>https://andjar.github.io/DataFindR/reference/index.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/parse_yaml_to_ellmer_schema.html</loc></url>
+<url><loc>https://andjar.github.io/DataFindR/reference/read_all_from_cache.html</loc></url>
 </urlset>
 
