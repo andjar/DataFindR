@@ -1,3 +1,8 @@
+#' Functions for extracting structured data from full-text study documents using LLMs.
+#'
+#' This file contains functions to extract data from PDF documents.
+#' It leverages LLMs to parse and structure the information according to a predefined schema.
+#' It includes functions for batch processing of documents.
 #' @title Extract Data for a Batch of Studies using LLM
 #'
 #' @description
@@ -6,20 +11,23 @@
 #' extraction cache within the `metawoRld` project. Does *not* import into metawoRld.
 #' Use `df_import_batch` subsequently to import cached results.
 #'
+#' @param chat An `ellmer` chat object, initialized with a specific LLM model (e.g., `ellmer::chat_openai()`). This object manages communication with the LLM service for data extraction.
 #' @param identifiers Character vector. A vector of DOIs and/or PMIDs for studies
 #'   identified as relevant (e.g., having an "Include" assessment decision).
-#' @param paper_paths Character vector. **Named** vector or list where names are
-#'   the identifiers (matching `identifiers` argument) and values are the file
-#'   paths to the corresponding full-text **plain text (.txt) files**.
+#' @param paper_paths A named character vector or list. Names must be the study identifiers (matching the `identifiers` argument). Values must be the file paths to the corresponding full-text PDF (.pdf) files. Ensure these files are accessible. Currently, only PDF files are supported.
 #' @param metawoRld_path Character string. Path to the root of the metawoRld project.
 #' @param force_extract Logical. If TRUE, bypass the extraction cache and re-run
 #'   LLM extraction even if cached JSON exists. Defaults to FALSE.
-#' @param service Character string. The LLM service to use (e.g., "openai").
-#' @param model Character string. The specific LLM model name (e.g., "gpt-4-turbo").
 #' @param stop_on_error Logical. If TRUE, stop the batch if any single extraction fails.
 #'   Defaults to FALSE.
+#' @param ellmer_timeout_s Numeric. Timeout in seconds for the underlying `ellmer` API calls during extraction. Defaults to 300 seconds (5 minutes).
 #' @param ... Additional arguments passed down to the LLM API call function
 #'   (e.g., `temperature`, `max_tokens`).
+#'
+#' @section API Keys:
+#' LLM API keys (e.g., `OPENAI_API_KEY`) are typically expected to be set as
+#' environment variables. Refer to the `ellmer` package documentation for more
+#' details on API key management.
 #'
 #' @return A data frame (tibble) summarizing the extraction attempt for each
 #'   identifier, with columns:
@@ -32,6 +40,81 @@
 #' Also prints progress and summary information.
 #'
 #' @export
+#' @examples
+#' \dontrun{
+#' # --- Prerequisites ---
+#' # 1. Set API key: usethis::edit_r_environ("project") -> add OPENAI_API_KEY=sk-... -> Restart R
+#' # 2. Create a dummy metawoRld project & files
+#' proj_path <- file.path(tempdir(), "extract_batch_proj")
+#' metawoRld::create_metawoRld(
+#'    proj_path,
+#'    project_name = "Test Batch Extraction",
+#'    project_description = "Testing DataFindR batch extraction",
+#'    data_extraction_schema = list( # Define a simple schema for the example
+#'      list(name = "sample_size", type = "integer", description = "Total sample size"),
+#'      list(name = "population", type = "string", description = "Study population description")
+#'    )
+#' )
+#'
+#' # Create dummy PDF files for extraction (replace with actual PDFs)
+#' id1 <- "study123"
+#' id2 <- "study456"
+#' pdf_path1 <- file.path(tempdir(), "study123.pdf")
+#' pdf_path2 <- file.path(tempdir(), "study456.pdf")
+#' # Create minimal valid PDF content for example purposes
+#' pdf_content <- c(
+#'   "%PDF-1.4",
+#'   "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+#'   "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+#'   "3 0 obj << /Type /Page /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj",
+#'   "4 0 obj << /Length 0 >> stream endstream endobj",
+#'   "xref", "0 5", "0000000000 65535 f ", "0000000009 00000 n ",
+#'   "0000000058 00000 n ", "0000000117 00000 n ", "0000000178 00000 n ",
+#'   "trailer << /Size 5 /Root 1 0 R >>", "startxref", "225", "%%EOF"
+#' )
+#' writeLines(pdf_content, pdf_path1)
+#' writeLines(pdf_content, pdf_path2) # Using same content for simplicity
+#'
+#' # --- Identifiers and Paths ---
+#' ids_to_extract <- c(id1, id2)
+#' paper_paths_list <- stats::setNames(c(pdf_path1, pdf_path2), ids_to_extract)
+#'
+#' # --- Run Batch Extraction ---
+#' # Ensure ellmer is installed: install.packages("ellmer")
+#' # You might need to install it from GitHub if not on CRAN:
+#' # remotes::install_github("ropensci/ellmer") or similar
+#' if (requireNamespace("ellmer", quietly = TRUE) && Sys.getenv("OPENAI_API_KEY") != "") {
+#'   my_chat_extract <- ellmer::chat_openai(model = "gpt-4o") # Or other capable model
+#'
+#'   # Mock df_assess_relevance results for included studies (if necessary for your full flow)
+#'   # For this example, we assume these IDs are already assessed as "Include"
+#'   # and their metadata might be cached (though not strictly used by df_extract_batch directly
+#'   # beyond what .generate_extraction_prompt might use if it reads metadata cache)
+#'
+#'   # Before running, ensure extraction prompt and schema are in the project
+#'   # (Typically handled by metawoRld::create_metawoRld or manually copying)
+#'   # For the example, let's assume they exist or are created by default
+#'   # For a real run, ensure these files are correctly set up:
+#'   # file.copy(system.file("prompts/_extraction_prompt.txt", package="DataFindR"), proj_path)
+#'   # file.copy(system.file("prompts/_extraction_schema.yml", package="DataFindR"), proj_path)
+#'
+#'   batch_extract_results <- df_extract_batch(
+#'     chat = my_chat_extract,
+#'     identifiers = ids_to_extract,
+#'     paper_paths = paper_paths_list,
+#'     metawoRld_path = proj_path,
+#'     ellmer_timeout_s = 600 # Increase timeout for potentially long documents
+#'   )
+#'   print(batch_extract_results)
+#' } else {
+#'   message("ellmer package not available or OPENAI_API_KEY not set. Skipping example execution.")
+#' }
+#'
+#' # --- Clean up ---
+#' unlink(proj_path, recursive = TRUE)
+#' unlink(pdf_path1)
+#' unlink(pdf_path2)
+#' }
 #' @importFrom purrr map safely list_transpose keep discard set_names map_chr map_lgl compact walk pmap
 #' @importFrom dplyr bind_rows tibble mutate select relocate if_else everything rename
 #' @importFrom rlang inform warn is_character abort is_logical is_named `%||%` list2 !!! is_null

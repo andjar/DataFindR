@@ -1,3 +1,7 @@
+#' General Utility Functions for DataFindR
+#'
+#' This file contains miscellaneous utility functions that support the DataFindR package,
+#' such as copying template files.
 #' @title Copy templates for DataFindR
 #'
 #' @description

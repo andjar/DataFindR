@@ -1,10 +1,10 @@
 Package: DataFindR
-Title: Automated LLM Study Assessment and Data Extraction
+Title: Automated Study Assessment and Data Extraction using Large Language Models (LLMs)
 Version: 0.0.0.9000
 Authors@R: 
     person("Anders Hagen", "Jarmund", , "anders.h.jarmund@ntnu.no", role = c("aut", "cre"),
     comment = c(ORCID = "0000-0002-3923-1637"))
-Description: Works in combination with the metawoRld package.
+Description: Provides functions to automate the process of study relevance assessment and data extraction from research papers using Large Language Models (LLMs). Key features include fetching metadata, assessing studies based on title/abstract against user-defined criteria, extracting structured data from full-text documents, and caching results to optimize workflows. It is designed to integrate with the 'metawoRld' package for systematic review and meta-analysis projects.
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

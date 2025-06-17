@@ -1,3 +1,7 @@
+#' Metadata Fetching Functions
+#'
+#' This file contains functions to retrieve study metadata (e.g., title, abstract, authors)
+#' from online sources like PubMed and Crossref using DOIs or PMIDs.
 #' @title Fetch Metadata for a Study Identifier (DOI or PMID)
 #'
 #' @description
