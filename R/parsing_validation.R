@@ -1,3 +1,7 @@
+#' Parsing and Validation Utilities
+#'
+#' This file contains utility functions for parsing schema definitions and validating
+#' data structures, particularly for data extracted by LLMs against these schemas.
 #' Validate extracted data against a schema definition (list format).
 #'
 #' Checks if the structure, types, and required fields of the extracted data
@@ -9,7 +13,8 @@
 #'
 #' @return A list of validation error messages. An empty list indicates successful
 #'   validation. Each error message includes the path to the problematic node.
-#' @export
+#' @noRd
+#' @keywords internal
 #'
 #' @examples
 #' \dontrun{

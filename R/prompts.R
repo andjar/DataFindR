@@ -1,3 +1,8 @@
+#' LLM Prompt Generation and Schema Parsing
+#'
+#' This file includes functions for generating formatted prompts for Large Language Models (LLMs)
+#' for tasks like study assessment and data extraction. It also contains functions for
+#' parsing YAML-based schema definitions into formats usable by the `ellmer` package.
 #' Generate Assessment Prompt
 #'
 #' Constructs a formatted prompt string for assessing a study based on its
@@ -68,7 +73,8 @@
 #'   If provided, the prompt can instruct the LLM to focus less on these.
 #'
 #' @return Character string. The formatted LLM prompt for data extraction.
-#' @export
+#' @noRd
+#' @keywords internal
 #' @importFrom glue glue
 #' @importFrom rlang `%||%` is_list abort is_scalar_character is_null
 #' @importFrom jsonlite toJSON

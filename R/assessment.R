@@ -1,3 +1,8 @@
+#' Functions for assessing study relevance using Large Language Models (LLMs).
+#'
+#' This file contains functions to assess the relevance of studies based on their
+#' title and abstract, utilizing LLMs for the assessment process. It includes
+#' functions for single study assessment and batch processing.
 #' @title Assess Study Relevance using LLM
 #'
 #' @description
@@ -5,19 +10,22 @@
 #' criteria, calls an LLM API to assess relevance based on Title/Abstract,
 #' parses the response, and caches results.
 #'
-#' @param chat An `ellmer` chat object.
+#' @param chat An `ellmer` chat object, initialized with a specific LLM model (e.g., `ellmer::chat_openai()`). This object manages the communication with the LLM service.
 #' @param identifier Character string. The DOI or PMID of the study.
 #' @param metawoRld_path Character string. Path to the root of the metawoRld project.
 #' @param force_fetch Logical. If TRUE, bypass the metadata cache and re-fetch
 #'   from online sources. Defaults to FALSE.
 #' @param force_assess Logical. If TRUE, bypass the assessment cache and
 #'   re-run the LLM assessment. Defaults to FALSE.
-#' @param service Character string. The LLM service to use (currently only "openai").
-#' @param model Character string. The specific LLM model name.
 #' @param email Character string (optional). Email for NCBI Entrez.
 #' @param ncbi_api_key Character string (optional). NCBI API key.
 #' @param ... Additional arguments passed to the underlying LLM API call function
 #'   (e.g., `temperature`, `max_tokens` passed to `.call_llm_openai`).
+#'
+#' @section API Keys:
+#' LLM API keys (e.g., `OPENAI_API_KEY`) are typically expected to be set as
+#' environment variables. Refer to the `ellmer` package documentation for more
+#' details on API key management.
 #'
 #' @return A list containing the structured assessment result (decision, score,
 #'   rationale) or aborts on critical failure.
@@ -46,23 +54,31 @@
 #' # --- Run Assessment ---
 #' pmid <- "31772108" # Example PMID relevant to cytokines/pregnancy
 #' tryCatch({
-#'   assessment_res <- df_assess_relevance(
-#'      identifier = pmid,
-#'      metawoRld_path = proj_path,
-#'      email = "your.email@example.com", # Replace with your email
-#'      service = "openai",
-#'      model = "gpt-3.5-turbo" # Use a cheaper model for testing initially
-#'   )
-#'   print(assessment_res)
+#'   # # Initialize the chat object (assuming OPENAI_API_KEY is set)
+#'   # # Ensure ellmer is installed: install.packages("ellmer")
+#'   # # You might need to install it from GitHub if not on CRAN:
+#'   # # remotes::install_github("ropensci/ellmer") or similar
+#'   if (requireNamespace("ellmer", quietly = TRUE) && Sys.getenv("OPENAI_API_KEY") != "") {
+#'     my_chat <- ellmer::chat_openai(model = "gpt-3.5-turbo")
 #'
-#'   # --- Run again (should use cache) ---
-#'   assessment_res_cached <- df_assess_relevance(pmid, proj_path, email = "your.email@example.com")
-#'   print(assessment_res_cached)
+#'     assessment_res <- df_assess_relevance(
+#'        chat = my_chat,
+#'        identifier = pmid,
+#'        metawoRld_path = proj_path,
+#'        email = "your.email@example.com" # Replace with your email
+#'     )
+#'     print(assessment_res)
 #'
-#'   # --- Force re-assessment ---
-#'   assessment_res_forced <- df_assess_relevance(pmid, proj_path, email = "your.email@example.com", force_assess = TRUE)
-#'   print(assessment_res_forced)
+#'     # --- Run again (should use cache) ---
+#'     assessment_res_cached <- df_assess_relevance(my_chat, pmid, proj_path, email = "your.email@example.com")
+#'     print(assessment_res_cached)
 #'
+#'     # --- Force re-assessment ---
+#'     assessment_res_forced <- df_assess_relevance(my_chat, pmid, proj_path, email = "your.email@example.com", force_assess = TRUE)
+#'     print(assessment_res_forced)
+#'   } else {
+#'     message("ellmer package not available or OPENAI_API_KEY not set. Skipping example execution.")
+#'   }
 #' }, error = function(e) {
 #'   message("Assessment failed: ", e$message)
 #' })
@@ -214,12 +230,11 @@ df_assess_relevance <- function(chat,
 #' Runs the relevance assessment workflow (`df_assess_relevance`) for multiple
 #' DOIs/PMIDs, leveraging caching and providing a summary of results.
 #'
+#' @param chat An `ellmer` chat object, initialized with a specific LLM model (e.g., `ellmer::chat_openai()`). This object will be used for all assessments in the batch.
 #' @param identifiers Character vector. A vector of DOIs and/or PMIDs.
 #' @param metawoRld_path Character string. Path to the root of the metawoRld project.
 #' @param force_fetch Logical. If TRUE, bypass the metadata cache for all identifiers.
 #' @param force_assess Logical. If TRUE, bypass the assessment cache for all identifiers.
-#' @param service Character string. The LLM service to use (e.g., "openai").
-#' @param model Character string. The specific LLM model name.
 #' @param email Character string (optional). Email for NCBI Entrez.
 #' @param ncbi_api_key Character string (optional). NCBI API key.
 #' @param stop_on_error Logical. If TRUE, the batch process stops if any single
@@ -227,6 +242,11 @@ df_assess_relevance <- function(chat,
 #'   and reports errors in the summary.
 #' @param ... Additional arguments passed down to `df_assess_relevance` and
 #'   subsequently to the LLM API call function (e.g., `temperature`).
+#'
+#' @section API Keys:
+#' LLM API keys (e.g., `OPENAI_API_KEY`) are typically expected to be set as
+#' environment variables. Refer to the `ellmer` package documentation for more
+#' details on API key management.
 #'
 #' @return A data frame (tibble) summarizing the assessment results for each
 #'   identifier, with columns:
@@ -271,15 +291,19 @@ df_assess_relevance <- function(chat,
 #' )
 #'
 #' # --- Run Batch Assessment ---
-#' batch_results <- df_assess_batch(
-#'   identifiers = ids_to_assess,
-#'   metawoRld_path = proj_path,
-#'   email = "your.email@example.com", # Replace with your email
-#'   service = "openai",
-#'   model = "gpt-3.5-turbo",
-#'   stop_on_error = FALSE # Continue processing even if one fails
-#' )
-#'
+#' if (requireNamespace("ellmer", quietly = TRUE) && Sys.getenv("OPENAI_API_KEY") != "") {
+#'   my_chat_batch <- ellmer::chat_openai(model = "gpt-3.5-turbo")
+#'   batch_results <- df_assess_batch(
+#'     chat = my_chat_batch,
+#'     identifiers = ids_to_assess,
+#'     metawoRld_path = proj_path,
+#'     email = "your.email@example.com", # Replace with your email
+#'     stop_on_error = FALSE # Continue processing even if one fails
+#'   )
+#'   print(batch_results)
+#' } else {
+#'   message("ellmer package not available or OPENAI_API_KEY not set. Skipping example execution.")
+#' }
 #' # --- View Results ---
 #' print(batch_results)
 #'

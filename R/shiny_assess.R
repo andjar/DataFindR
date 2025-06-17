@@ -1,4 +1,50 @@
+#' Shiny Application for Interactive Study Assessment
+#'
+#' This file defines a Shiny application that provides a user interface for
+#' fetching study metadata, assessing study relevance using LLMs based on title/abstract
+#' and project criteria, and viewing/editing/saving assessment results to cache.
 # --- (Keep existing @import tags and function definition) ---
+#' Launch Shiny App for Interactive Study Assessment
+#'
+#' Launches a Shiny application that provides a user interface for the study
+#' assessment phase of a systematic review or meta-analysis workflow.
+#'
+#' @details
+#' The application allows users to:
+#' \itemize{
+#'   \item Specify a `metawoRld` project path.
+#'   \item Enter a study identifier (DOI or PMID).
+#'   \item Fetch bibliographic metadata (title, abstract) for the identifier.
+#'   \item Manually input or edit the title and abstract.
+#'   \item View inclusion/exclusion criteria from the `metawoRld` project.
+#'   \item View the generated prompt for LLM-based assessment.
+#'   \item Trigger an LLM call (e.g., OpenAI, Google) to assess study relevance based on the
+#'         title/abstract and criteria.
+#'   \item View the LLM's assessment result (decision, score, rationale).
+#'   \item Manually input or edit the assessment result in JSON format.
+#'   \item Save the assessment result (from LLM or manual input) to the project's cache.
+#'   \item Load existing assessment and metadata from cache when an identifier is entered.
+#' }
+#'
+#' Prerequisites:
+#' \itemize{
+#'   \item The `shiny`, `glue`, `rlang`, `yaml`, `fs`, `jsonlite` packages must be installed.
+#'   \item `rclipboard` is suggested for the "Copy Prompt" functionality.
+#'   \item For LLM calls, the appropriate API key (e.g., `OPENAI_API_KEY` for OpenAI models,
+#'         `GOOGLE_API_KEY` for Google models) must be set as an environment variable
+#'         (e.g., in your `.Renviron` file, followed by an R session restart).
+#'         Refer to the `ellmer` package for more details on API key setup.
+#'   \item The specified `metawoRld` project path must point to a valid project
+#'         containing a `_metawoRld.yml` configuration file with defined
+#'         inclusion and exclusion criteria.
+#' }
+#'
+#' @param launch.browser Logical, passed to `shiny::runApp`. If `TRUE` (default),
+#'   the app will launch in the system's default web browser.
+#' @param ... Additional arguments passed to `shiny::runApp` (e.g., `port`, `host`).
+#'
+#' @return Does not return a value; runs the Shiny application.
+#' @export
 #' @import shiny
 #' @importFrom glue glue
 #' @importFrom rlang inform warn abort is_list `%||%` check_installed is_scalar_character

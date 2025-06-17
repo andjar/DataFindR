@@ -1,3 +1,9 @@
+#' Shiny Application for Interactive Data Extraction
+#'
+#' This file defines a Shiny application that provides a user interface for
+#' managing the data extraction process from full-text documents, often following
+#' an assessment phase. It helps in generating extraction prompts, (optionally)
+#' using LLMs for extraction, and saving structured data.
 #' Launch Shiny App for Extracting Study Data
 #'
 #' Launches a Shiny application to manage the data extraction phase. It helps
@@ -9,14 +15,39 @@
 #' @param ... Additional arguments passed to `shiny::runApp` (e.g., `port`, `host`).
 #'
 #' @details
-#' Before running the app:
+#' The application facilitates the data extraction workflow by allowing users to:
 #' \itemize{
-#'   \item Ensure `metawoRld` and `DataFindR` packages are installed and accessible.
-#'   \item Ensure the target `metawoRld` project directory exists and contains a valid `_metawoRld.yml`.
-#'   \item Ensure assessment results exist in the project's cache (`.metawoRld_cache/datafindr/assessment/`).
-#'   \item If triggering API calls, ensure the relevant API key (e.g., `OPENAI_API_KEY`) is set in your environment.
-#'   \item For LLM extraction, you currently need to provide a path to a **plain text file** containing the full paper content. PDF processing within the app is not yet implemented.
-#'   \item The `rclipboard` package is needed for the 'Copy Prompt' button.
+#'   \item Specify a `metawoRld` project path.
+#'   \item View a list of studies that have been assessed as "Include" (or similar, based
+#'         on `.find_pending_extraction_studies`) and do not yet have extraction data in the cache.
+#'   \item Select a study from the pending list.
+#'   \item View any cached metadata for the selected study.
+#'   \item View the generated extraction prompt, which is based on the project's
+#'         data extraction schema defined in `_metawoRld.yml`.
+#'   \item Provide a file path to the full-text document (currently plain text `.txt` files).
+#'   \item (Optionally) Trigger an LLM call to extract data from the provided text file
+#'         based on the generated prompt and project schema. The LLM is expected to return JSON.
+#'   \item View the JSON output from the LLM or manually input/edit extraction data in JSON format.
+#'         The JSON should conform to the structure: `{"metadata": {...}, "data_points": [...]}`.
+#'   \item Save the (LLM-generated or manually edited) extraction JSON to the project's cache.
+#' }
+#'
+#' Prerequisites:
+#' \itemize{
+#'   \item The `shiny`, `glue`, `rlang`, `yaml`, `fs`, `jsonlite`, `purrr`, `metawoRld`
+#'         packages must be installed.
+#'   \item `rclipboard` is suggested for the "Copy Prompt" functionality.
+#'   \item For LLM calls, the appropriate API key (e.g., `OPENAI_API_KEY`, `GOOGLE_API_KEY`)
+#'         must be set as an environment variable. Refer to `ellmer` documentation.
+#'   \item The specified `metawoRld` project path must be valid and contain:
+#'         \itemize{
+#'           \item A `_metawoRld.yml` file with a defined `data_extraction_schema`.
+#'           \item Cached assessment results (used by `.find_pending_extraction_studies`).
+#'           \item An `_extraction_prompt.txt` and `_extraction_schema.yml` (or ensure
+#'                 `df_generate_extraction_prompt` and related functions can find/create them).
+#'         }
+#'   \item Full-text documents for extraction must be available as plain text (`.txt`) files
+#'         and their paths provided to the app.
 #' }
 #'
 #' @return Does not return a value; runs the Shiny application.

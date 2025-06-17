@@ -1,3 +1,8 @@
+#' Data Importing Functions for metawoRld Integration
+#'
+#' This file provides functions to import structured data, typically extracted by LLMs,
+#' into a `metawoRld` project. It handles validation against project schemas and
+#' integration with `metawoRld`'s data structures.
 #' Import Extracted Study Data into a metawoRld Project
 #'
 #' Reads cached extraction JSON data for a study, validates it against the

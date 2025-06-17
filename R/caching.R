@@ -1,3 +1,8 @@
+#' Caching Utility Functions for DataFindR
+#'
+#' This file contains functions for managing cached data within a metawoRld project.
+#' It includes functions for saving, loading, and clearing cached items related to
+#' metadata, assessment results, and extracted data.
 #' Get the Path to the DataFindR Cache Directory within a metawoRld Project
 #'
 #' @param metawoRld_path Path to the root of the metawoRld project.
@@ -136,6 +141,7 @@
 #' Clear DataFindR Cache within a metawoRld Project
 #'
 #' Removes cached files for a specific identifier or the entire cache.
+#' Note: If using the Shiny applications, they might hold some data in memory; restarting the Shiny app might be necessary to fully reflect cache clearing.
 #'
 #' @param identifier The original identifier (e.g., DOI) to clear cache for.
 #'   If NULL (default), clears the *entire* DataFindR cache for the project.
