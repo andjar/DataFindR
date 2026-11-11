@@ -2,25 +2,28 @@
 % Please edit documentation in R/caching.R
 \name{df_clear_cache}
 \alias{df_clear_cache}
-\title{Clear DataFindR Cache within a metawoRld Project}
+\title{Clear cached results}
 \usage{
-df_clear_cache(identifier = NULL, type = NULL, metawoRld_path)
+df_clear_cache(
+  identifiers = NULL,
+  type = c("metadata", "assessment", "extraction"),
+  metawoRld_path = ".",
+  ask = interactive()
+)
 }
 \arguments{
-\item{identifier}{The original identifier (e.g., DOI) to clear cache for.
-If NULL (default), clears the \emph{entire} DataFindR cache for the project.
-Use with caution!}
+\item{identifiers}{Identifiers to clear. \code{NULL} clears everything of the
+given types (asks for confirmation in interactive sessions).}
 
-\item{type}{Cache type(s) to clear: "assessment", "extraction", "metadata",
-or a vector like \code{c("assessment", "extraction")}. If NULL (default), clears
-all types for the given identifier(s).}
+\item{type}{One or more of \code{"metadata"}, \code{"assessment"}, \code{"extraction"}.}
 
-\item{metawoRld_path}{Path to the metawoRld project containing the cache.}
+\item{metawoRld_path}{Project root.}
+
+\item{ask}{Ask before clearing everything? Defaults to \code{interactive()}.}
 }
 \value{
-Invisibly returns TRUE if deletion operations were attempted
-(doesn't guarantee success for every file if permissions fail).
+Number of files deleted, invisibly.
 }
 \description{
-Removes cached files for a specific identifier or the entire cache.
+Clear cached results
 }

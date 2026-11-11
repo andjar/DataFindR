@@ -1,15 +1,25 @@
-url: https://andjar.github.io/DataFindR # Replace with your site URL if deploying
+url: https://andjar.github.io/DataFindR
 template:
   bootstrap: 5
 
 navbar:
-  left:
-    - text: "Reference"
-      href: reference/index.html
-    - text: "Articles"
-      menu:
-        - text: "Conceptual Overview (metawoRld)"
-          href: https://andjar.github.io/metawoRld/articles/conceptual_overview.html # Link to metawoRld's vignette
-        # Add DataFindR-specific articles here later if needed (e.g., API setup)
-    - text: "metawoRld Pkg" # Link to the other package's site
-      href: https://andjar.github.io/metawoRld # Replace with metawoRld site URL
+  structure:
+    left: [reference, overview]
+    right: [metaworld, github]
+  components:
+    overview:
+      text: Pipeline overview
+      href: https://andjar.github.io/metawoRld/articles/conceptual_overview.html
+    metaworld:
+      text: metawoRld
+      href: https://andjar.github.io/metawoRld
+
+reference:
+  - title: Records
+    contents: [df_search_pubmed, df_fetch_metadata, df_add_metadata]
+  - title: Screening
+    contents: [df_assess_batch, df_save_assessment, df_shiny_assess, df_assessment_prompt]
+  - title: Extraction
+    contents: [df_extract_batch, df_save_extraction, df_shiny_extract, df_find_fulltexts, df_fulltext_filename, df_extraction_prompt, df_schema_to_ellmer]
+  - title: Import and progress
+    contents: [df_import_batch, df_import_extraction, df_status, df_prisma_counts, df_pending_extraction, df_read_cache, df_clear_cache]

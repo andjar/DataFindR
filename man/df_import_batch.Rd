@@ -2,50 +2,27 @@
 % Please edit documentation in R/importing.R
 \name{df_import_batch}
 \alias{df_import_batch}
-\title{Import Cached Extraction Data for a Batch of Studies}
+\title{Import several cached extractions}
 \usage{
 df_import_batch(
-  identifiers,
-  metawoRld_path,
+  identifiers = NULL,
+  metawoRld_path = ".",
   overwrite = FALSE,
-  validate_json = TRUE,
-  merge_metadata = TRUE,
-  stop_on_error = FALSE
+  merge_metadata = TRUE
 )
 }
 \arguments{
-\item{identifiers}{Character vector. A vector of DOIs and/or PMIDs for studies
-that have cached extraction data ready for import.}
+\item{identifiers}{Identifiers to import. Defaults to every cached
+extraction that is not yet in the project.}
 
-\item{metawoRld_path}{Character string. Path to the root of the target
-metawoRld project.}
+\item{metawoRld_path}{Project root.}
 
-\item{overwrite}{Logical. Passed to \code{metawoRld::add_study_data} via
-\code{df_import_extraction}. If TRUE, overwrite existing study data in the
-\code{metawoRld} project. Defaults to \code{FALSE}.}
-
-\item{validate_json}{Logical. Passed to \code{df_import_extraction}. If TRUE,
-validate the cached JSON against the schema before importing. Defaults to \code{TRUE}.}
-
-\item{merge_metadata}{Logical. Passed to \code{df_import_extraction}. If TRUE,
-merge cached bibliographic metadata with extracted metadata. Defaults to \code{TRUE}.}
-
-\item{stop_on_error}{Logical. If TRUE, stop the batch if any single import fails.
-Defaults to \code{FALSE}.}
+\item{overwrite, merge_metadata}{See \code{\link[=df_import_extraction]{df_import_extraction()}}.}
 }
 \value{
-A data frame (tibble) summarizing the import attempt for each
-identifier, with columns:
-\describe{
-\item{\code{identifier}}{The DOI or PMID.}
-\item{\code{status}}{"Success", "Skipped" (e.g., cache file missing), or "Failure".}
-\item{\code{metawoRld_study_path}}{Path to the study directory if import was successful.}
-\item{\code{error_message}}{The error message if status is "Failure" or "Skipped".}
-}
-Also prints progress and summary information.
+A tibble with \code{identifier}, \code{status} (\code{"imported"} or \code{"failed"}),
+\code{path} and \code{error}. Validation problems are listed in \code{error}.
 }
 \description{
-Reads cached extraction data (JSON format saved by \code{df_extract_batch} or
-manually) for multiple studies and imports them into the specified \code{metawoRld}
-project using \code{df_import_extraction}.
+Import several cached extractions
 }

@@ -1,0 +1,20 @@
+test_that("both metawoRld templates convert to ellmer types", {
+  p <- local_project()
+  t1 <- df_schema_to_ellmer(metawoRld::get_schema(p, "assessment"))
+  expect_s3_class(t1, "object")
+  expect_s3_class(t1$decision, "enum")
+  t2 <- df_schema_to_ellmer(metawoRld::get_schema(p, "extraction"))
+  expect_s3_class(t2$data_points, "array")
+  expect_s3_class(t2$data_points$items$statistic_type, "enum")
+  expect_false(t2$metadata$journal$required)
+})
+
+test_that("prompts use the project's own templates and criteria", {
+  p <- local_project()
+  writeLines("CUSTOM {{inclusion_criteria}} | {{title}} | {{abstract}}", file.path(p, "_assessment_prompt.txt"))
+  pr <- df_assessment_prompt(list(title = "T", abstract = NA), p)
+  expect_equal(pr, "CUSTOM - Human pregnancy\n- Biomarker X measured | T | Not available")
+  pe <- df_extraction_prompt("10.1/x", p, metadata = list(title = "T", year = 2020, doi = NA))
+  expect_match(pe, "- title: T\n- year: 2020", fixed = TRUE)
+  expect_false(grepl("doi:", pe))
+})

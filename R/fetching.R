@@ -1,172 +1,261 @@
-#' Metadata Fetching Functions
+#' Fetch bibliographic metadata for DOIs and PMIDs
 #'
-#' This file contains functions to retrieve study metadata (e.g., title, abstract, authors)
-#' from online sources like PubMed and Crossref using DOIs or PMIDs.
-#' @title Fetch Metadata for a Study Identifier (DOI or PMID)
+#' Looks up title, abstract, authors, year, journal, DOI and PMID. PubMed is
+#' tried first (structured abstracts are kept, with section labels); DOIs not
+#' indexed in PubMed fall back to Crossref. Requests are batched and
+#' rate-limited according to NCBI's rules.
 #'
-#' @description
-#' Retrieves bibliographic metadata (title, abstract, authors, year, journal)
-#' for a given DOI or PMID using online services (Crossref, PubMed).
-#'
-#' @param identifier Character string. The DOI or PMID of the study.
-#' @param email Character string (optional). Your email address, recommended
-#'   for NCBI Entrez politeness when fetching from PubMed. If not provided,
-#'   `rentrez` might issue a warning.
-#' @param ncbi_api_key Character string (optional). Your NCBI API key for
-#'   potentially higher rate limits. Set using `rentrez::set_entrez_key()`.
-#'
-#' @return A list containing the fetched metadata (identifier, type, title,
-#'   abstract, authors, year, journal) or `NULL` if fetching fails or the
-#'   identifier type is not recognized. Issues warnings on failure.
+#' @param identifiers Character vector of DOIs and/or PMIDs. Prefixes such as
+#'   `https://doi.org/` or `PMID:` are removed.
+#' @param email Contact e-mail sent to NCBI and Crossref (recommended; NCBI
+#'   may block anonymous heavy use). Defaults to the `DATAFINDR_EMAIL`
+#'   environment variable.
+#' @param api_key NCBI API key (allows 10 instead of 3 requests per second).
+#'   Defaults to the `NCBI_API_KEY` environment variable.
+#' @return A named list (names are normalized identifiers). Each element is a
+#'   list with `identifier`, `doi`, `pmid`, `title`, `abstract`, `authors`,
+#'   `year`, `journal`, `source` and `fetched`, or `NULL` if nothing was found.
 #' @export
-#' @importFrom rentrez entrez_summary entrez_fetch set_entrez_key fetch_error uid_error
-#' @importFrom rlang check_installed is_scalar_character warn inform abort `%||%`
-#' @importFrom glue glue
-#' @importFrom stats setNames
-#'
 #' @examples
 #' \dontrun{
-#' # Fetch metadata for a known PMID (requires internet connection)
-#' pmid_meta <- df_fetch_metadata("25376210", email = "your.email@example.com")
-#' print(pmid_meta)
-#'
-#' # Fetch metadata for a known DOI (requires internet connection and rcrossref)
-#' doi_meta <- df_fetch_metadata("10.1038/nature14539", email = "your.email@example.com")
-#' print(doi_meta)
-#'
-#' # Example of a potentially invalid identifier
-#' invalid_meta <- df_fetch_metadata("invalid-id")
-#' print(invalid_meta)
+#' df_fetch_metadata(c("31772108", "10.1038/nature14539"), email = "me@example.org")
 #' }
-df_fetch_metadata <- function(identifier, email = NULL, ncbi_api_key = NULL) {
+df_fetch_metadata <- function(identifiers,
+                              email = Sys.getenv("DATAFINDR_EMAIL"),
+                              api_key = Sys.getenv("NCBI_API_KEY")) {
+  ids <- unique(metawoRld::normalize_identifier(identifiers))
+  ids <- ids[nzchar(ids)]
+  out <- rlang::set_names(vector("list", length(ids)), ids)
+  if (!length(ids)) return(out)
+  type <- metawoRld::identifier_type(ids)
+  if (any(type == "other")) {
+    rlang::warn(paste0("Not a DOI or PMID, skipped: ", paste(ids[type == "other"], collapse = ", ")))
+  }
 
-  if (!rlang::is_scalar_character(identifier) || identifier == "") {
-    rlang::abort("`identifier` must be a non-empty character string.")
+  # PMIDs
+  pmids <- ids[type == "pmid"]
+  if (length(pmids)) {
+    recs <- .pubmed_fetch(pmids, email, api_key)
+    for (r in recs) if (r$pmid %in% pmids) out[[r$pmid]] <- c(list(identifier = r$pmid), r)
   }
-  if (!is.null(email) && !rlang::is_scalar_character(email)) {
-    rlang::warn("`email` should be a single string. Ignoring provided value.")
-    email <- NULL
-  }
-  if (!is.null(ncbi_api_key)) {
-    rentrez::set_entrez_key(ncbi_api_key)
-    rlang::inform("NCBI API key set via rentrez.")
-  }
-  if (!is.null(email)) {
-    Sys.setenv("ENTREZ_EMAIL" = email) # Set for rentrez session
-    rlang::inform("NCBI email address set via environment variable ENTREZ_EMAIL.")
-  } else {
-    # Check if email is already set globally, otherwise rentrez warns
-    if(Sys.getenv("ENTREZ_EMAIL") == "") {
-      rlang::warn("No email address provided for NCBI Entrez. Rate limiting may be stricter.")
+
+  # DOIs: PubMed via DOI search, then Crossref for the rest
+  dois <- ids[type == "doi"]
+  if (length(dois)) {
+    found <- .pubmed_pmids_for_dois(dois, email, api_key)
+    if (length(found)) {
+      recs <- .pubmed_fetch(unname(found), email, api_key)
+      for (r in recs) {
+        d <- tolower(r$doi %||% "")
+        if (d %in% dois) out[[d]] <- c(list(identifier = d), r)
+      }
+    }
+    for (d in dois[vapply(out[dois], is.null, logical(1))]) {
+      r <- tryCatch(.crossref_fetch(d, email), error = function(e) {
+        rlang::warn(paste0("Crossref lookup failed for ", d, ": ", conditionMessage(e)))
+        NULL
+      })
+      if (!is.null(r)) out[[d]] <- c(list(identifier = d), r)
     }
   }
 
-  # --- Determine Identifier Type ---
-  id_type <- NULL
-  if (grepl("^[0-9]+$", identifier)) {
-    id_type <- "pmid"
-  } else if (grepl("^10\\.", identifier)) {
-    # Basic check for DOI starting with 10. More robust check possible
-    id_type <- "doi"
-  } else {
-    rlang::warn(glue::glue("Could not determine identifier type (PMID or DOI) for: '{identifier}'"))
-    return(NULL)
+  missing <- names(out)[vapply(out, is.null, logical(1)) & type != "other"]
+  if (length(missing)) rlang::warn(paste0("No metadata found for: ", paste(missing, collapse = ", ")))
+  out
+}
+
+#' Search PubMed and cache the results
+#'
+#' Runs a PubMed query, fetches metadata for every hit and stores it in the
+#' project's metadata cache, ready for [df_assess_batch()]. Records that are
+#' already cached are not fetched again, which makes repeated searches cheap
+#' in a living review.
+#'
+#' @param query PubMed query string.
+#' @param metawoRld_path Project root.
+#' @param max_results Maximum number of records. Defaults to 10000.
+#' @param mindate,maxdate Optional publication date limits (`"YYYY/MM/DD"`,
+#'   `"YYYY/MM"` or `"YYYY"`).
+#' @inheritParams df_fetch_metadata
+#' @return A tibble with `identifier` (PMID), `title`, `year` and `new`
+#'   (`TRUE` if the record was not in the cache before).
+#' @export
+df_search_pubmed <- function(query,
+                             metawoRld_path = ".",
+                             max_results = 10000,
+                             mindate = NULL,
+                             maxdate = NULL,
+                             email = Sys.getenv("DATAFINDR_EMAIL"),
+                             api_key = Sys.getenv("NCBI_API_KEY")) {
+  proj <- .check_project(metawoRld_path)
+  if (!rlang::is_scalar_character(query) || !nzchar(query)) rlang::abort("`query` must be a single string.")
+  params <- list(db = "pubmed", term = query, retmax = max_results, retmode = "json")
+  if (!is.null(mindate) || !is.null(maxdate)) {
+    params <- c(params, list(datetype = "pdat", mindate = mindate %||% "1800", maxdate = maxdate %||% "3000"))
   }
+  res <- jsonlite::fromJSON(.eutils("esearch.fcgi", params, email, api_key))
+  pmids <- as.character(unlist(res$esearchresult$idlist))
+  total <- as.integer(res$esearchresult$count %||% length(pmids))
+  if (total > length(pmids)) {
+    rlang::warn(sprintf("Query matched %d records; only the first %d were retrieved (see `max_results`).", total, length(pmids)))
+  }
+  if (!length(pmids)) return(dplyr::tibble(identifier = character(0), title = character(0), year = integer(0), new = logical(0)))
 
-  rlang::inform(glue::glue("Attempting to fetch metadata for {toupper(id_type)}: {identifier}"))
+  cached <- vapply(pmids, function(p) !is.null(.cache_read(p, "metadata", proj)), logical(1))
+  if (any(!cached)) {
+    recs <- .pubmed_fetch(pmids[!cached], email, api_key)
+    for (r in recs) .cache_write(r$pmid, c(list(identifier = r$pmid), r), "metadata", proj)
+  }
+  meta <- lapply(pmids, function(p) .cache_read(p, "metadata", proj))
+  rlang::inform(sprintf("%d records (%d new) cached for query.", length(pmids), sum(!cached)))
+  dplyr::tibble(
+    identifier = pmids,
+    title = vapply(meta, function(m) as.character(m$title %||% NA_character_), character(1)),
+    year = vapply(meta, function(m) as.integer(m$year %||% NA_integer_), integer(1)),
+    new = !cached
+  )
+}
 
-  # --- Fetch Data ---
-  metadata <- NULL
-  tryCatch({
-    if (id_type == "pmid") {
-      # Fetch Summary for core metadata
-      summary_rec <- rentrez::entrez_summary(db = "pubmed", id = identifier, email = email)
-      if (inherits(summary_rec, "uid_error") || length(summary_rec) == 0) {
-        stop(glue::glue("PMID '{identifier}' not found or invalid on PubMed."))
+#' Add metadata for a study by hand
+#'
+#' Stores title, abstract, etc. in the metadata cache, e.g. for records that
+#' are not in PubMed or Crossref, or to correct a fetched abstract.
+#'
+#' @param identifier Study identifier.
+#' @param metadata Named list with at least `title`; ideally also `abstract`,
+#'   `authors`, `year`, `journal`, `doi` and `pmid`.
+#' @param metawoRld_path Project root.
+#' @return The cache file path, invisibly.
+#' @export
+df_add_metadata <- function(identifier, metadata, metawoRld_path = ".") {
+  proj <- .check_project(metawoRld_path)
+  id <- metawoRld::normalize_identifier(identifier)
+  if (!is.list(metadata) || is.null(metadata$title)) rlang::abort("`metadata` must be a list with at least `title`.")
+  metadata$identifier <- id
+  metadata$source <- metadata$source %||% "manual"
+  metadata$fetched <- metadata$fetched %||% as.character(Sys.Date())
+  invisible(.cache_write(id, metadata, "metadata", proj))
+}
+
+# ---- metadata from cache or web ---------------------------------------------------
+
+# Returns named list of metadata (NULL where unavailable), fetching and caching
+# anything missing.
+.get_metadata <- function(ids, proj, force = FALSE, email = "", api_key = "") {
+  out <- rlang::set_names(vector("list", length(ids)), ids)
+  if (!force) for (id in ids) out[id] <- list(.cache_read(id, "metadata", proj))
+  todo <- ids[vapply(out, is.null, logical(1))]
+  if (length(todo)) {
+    fetched <- df_fetch_metadata(todo, email = email, api_key = api_key)
+    for (id in names(fetched)) {
+      if (!is.null(fetched[[id]])) {
+        .cache_write(id, fetched[[id]], "metadata", proj)
+        out[id] <- list(fetched[[id]])
       }
-      # Extract fields safely
-      title <- summary_rec$title %||% NA_character_
-      authors <- summary_rec$authors$name %||% NA_character_
-      journal <- summary_rec$source %||% NA_character_
-      year_str <- summary_rec$pubdate %||% NA_character_
-      year <- suppressWarnings(as.integer(substr(year_str, 1, 4))) # Extract year
-
-      # Fetch Abstract separately
-      abstract_rec <- rentrez::entrez_fetch(db = "pubmed", id = identifier, rettype = "abstract", retmode = "text", email = email)
-      if (inherits(abstract_rec, "fetch_error") || length(abstract_rec) == 0) {
-        rlang::warn(glue::glue("Could not fetch abstract for PMID '{identifier}'."))
-        abstract <- NA_character_
-      } else {
-        # Clean up abstract formatting
-        abstract <- gsub("\\n+", " ", abstract_rec) # Replace multiple newlines with space
-        abstract <- trimws(abstract)
-      }
-
-      metadata <- list(
-        identifier = identifier,
-        type = "pmid",
-        title = title,
-        abstract = abstract,
-        authors = as.list(authors), # Keep as list for consistency
-        year = year,
-        journal = journal
-      )
-
-    } else if (id_type == "doi") {
-      rlang::check_installed("rcrossref", reason = "to fetch metadata using DOIs.")
-      # Use cr_works, suppressing messages if desired
-      work_info <- rcrossref::cr_works(dois = identifier, .progress = "none")
-
-      if (is.null(work_info) || is.null(work_info$data) || nrow(work_info$data) == 0) {
-        stop(glue::glue("DOI '{identifier}' not found or invalid via Crossref."))
-      }
-      data <- work_info$data
-
-      # Extract fields safely - names can vary slightly, use %||%
-      title <- data$title %||% NA_character_
-      # Authors might be nested
-      authors_df <- data$author[[1]] # Assumes one work returned
-      authors <- if (is.data.frame(authors_df)) paste(authors_df$given, authors_df$family) else NA_character_
-      journal <- data$container.title %||% NA_character_
-      # Year extraction needs care
-      year_parts <- strsplit(data$issued[[1]], "-", fixed = TRUE)[[1]]
-      year <- if(length(year_parts) > 0) suppressWarnings(as.integer(year_parts[1])) else NA_integer_
-      abstract_html <- data$abstract %||% NA_character_
-      # Clean abstract HTML (basic cleaning)
-      abstract <- gsub("<.*?>", " ", abstract_html) # Remove HTML tags
-      abstract <- gsub("\\s+", " ", abstract) # Collapse whitespace
-      abstract <- trimws(abstract)
-
-
-      metadata <- list(
-        identifier = identifier,
-        type = "doi",
-        title = title,
-        abstract = abstract,
-        authors = as.list(authors), # Keep as list
-        year = year,
-        journal = journal
-      )
     }
-  }, error = function(e) {
-    rlang::warn(glue::glue("Failed to fetch metadata for {toupper(id_type)} '{identifier}'. Reason: {e$message}"))
-    metadata <<- NULL # Ensure metadata is NULL on error
+  }
+  out
+}
+
+# ---- HTTP ---------------------------------------------------------------------
+
+.http_get <- function(url, query = list(), realm = NULL, rate = 3) {
+  req <- httr2::request(url) |>
+    httr2::req_url_query(!!!Filter(function(v) !is.null(v) && !identical(v, ""), query)) |>
+    httr2::req_user_agent("DataFindR (https://github.com/andjar/DataFindR)") |>
+    httr2::req_retry(max_tries = 4) |>
+    httr2::req_timeout(60)
+  if (!is.null(realm)) req <- httr2::req_throttle(req, rate = rate, realm = realm)
+  httr2::resp_body_string(httr2::req_perform(req))
+}
+
+.eutils <- function(endpoint, params, email, api_key) {
+  rate <- if (nzchar(api_key %||% "")) 10 else 3
+  .http_get(
+    paste0("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/", endpoint),
+    c(params, list(tool = "DataFindR", email = email, api_key = api_key)),
+    realm = "ncbi-eutils", rate = rate
+  )
+}
+
+.pubmed_fetch <- function(pmids, email, api_key, chunk = 200) {
+  chunks <- split(pmids, ceiling(seq_along(pmids) / chunk))
+  unlist(lapply(chunks, function(ids) {
+    xml <- .eutils("efetch.fcgi", list(db = "pubmed", id = paste(ids, collapse = ","), retmode = "xml"), email, api_key)
+    .parse_pubmed_xml(xml)
+  }), recursive = FALSE, use.names = FALSE) %||% list()
+}
+
+.pubmed_pmids_for_dois <- function(dois, email, api_key, chunk = 50) {
+  chunks <- split(dois, ceiling(seq_along(dois) / chunk))
+  pm <- unlist(lapply(chunks, function(d) {
+    term <- paste0('"', d, '"[DOI]', collapse = " OR ")
+    res <- tryCatch(
+      jsonlite::fromJSON(.eutils("esearch.fcgi", list(db = "pubmed", term = term, retmax = length(d) * 2, retmode = "json"), email, api_key)),
+      error = function(e) NULL
+    )
+    as.character(unlist(res$esearchresult$idlist))
+  }))
+  unique(pm)
+}
+
+.parse_pubmed_xml <- function(xml) {
+  doc <- xml2::read_xml(xml)
+  arts <- xml2::xml_find_all(doc, "//PubmedArticle")
+  lapply(arts, function(a) {
+    txt <- function(xp) {
+      n <- xml2::xml_find_first(a, xp)
+      if (inherits(n, "xml_missing")) NA_character_ else trimws(xml2::xml_text(n))
+    }
+    abs_nodes <- xml2::xml_find_all(a, ".//Article/Abstract/AbstractText")
+    abstract <- if (length(abs_nodes)) {
+      labels <- xml2::xml_attr(abs_nodes, "Label")
+      parts <- trimws(xml2::xml_text(abs_nodes))
+      paste(ifelse(is.na(labels), parts, paste0(labels, ": ", parts)), collapse = "\n")
+    } else NA_character_
+    authors <- vapply(xml2::xml_find_all(a, ".//Article/AuthorList/Author"), function(au) {
+      coll <- xml2::xml_find_first(au, "CollectiveName")
+      if (!inherits(coll, "xml_missing")) return(xml2::xml_text(coll))
+      trimws(paste(xml2::xml_text(xml2::xml_find_first(au, "LastName")),
+                   xml2::xml_text(xml2::xml_find_first(au, "Initials"))))
+    }, character(1))
+    year <- txt(".//Article/Journal/JournalIssue/PubDate/Year")
+    if (is.na(year)) year <- substr(txt(".//Article/Journal/JournalIssue/PubDate/MedlineDate"), 1, 4)
+    doi <- txt(".//PubmedData/ArticleIdList/ArticleId[@IdType='doi']")
+    if (is.na(doi)) doi <- txt(".//Article/ELocationID[@EIdType='doi']")
+    list(
+      pmid = txt(".//MedlineCitation/PMID"),
+      doi = if (is.na(doi)) NA_character_ else tolower(doi),
+      title = txt(".//Article/ArticleTitle"),
+      abstract = abstract,
+      authors = authors,
+      year = suppressWarnings(as.integer(year)),
+      journal = txt(".//Article/Journal/Title"),
+      source = "pubmed",
+      fetched = as.character(Sys.Date())
+    )
   })
+}
 
-  if (is.null(metadata)) {
-    return(NULL)
-  }
-
-  # --- Final Check for critical missing info ---
-  if (is.na(metadata$title) || metadata$title == "") {
-    rlang::warn(glue::glue("Fetched metadata for '{identifier}', but title is missing."))
-    # Decide if this is fatal - maybe allow proceeding without title?
-  }
-  if (is.na(metadata$abstract) || metadata$abstract == "") {
-    rlang::warn(glue::glue("Fetched metadata for '{identifier}', but abstract is missing. Assessment quality may be reduced."))
-    # Proceeding without abstract might be okay, but assessment will be poor.
-  }
-
-  rlang::inform(glue::glue("Successfully fetched metadata for {toupper(id_type)}: {identifier}"))
-  return(metadata)
+.crossref_fetch <- function(doi, email) {
+  body <- .http_get(paste0("https://api.crossref.org/works/", utils::URLencode(doi)),
+                    list(mailto = email), realm = "crossref", rate = 10)
+  m <- jsonlite::fromJSON(body, simplifyVector = FALSE)$message
+  authors <- vapply(m$author %||% list(), function(a) {
+    trimws(paste(a$family %||% a$name %||% "", a$given %||% ""))
+  }, character(1))
+  parts <- m$issued$`date-parts`[[1]] %||% m$published$`date-parts`[[1]]
+  abstract <- m$abstract %||% NA_character_
+  if (!is.na(abstract)) abstract <- trimws(gsub("\\s+", " ", gsub("<[^>]+>", " ", abstract)))
+  list(
+    pmid = NA_character_,
+    doi = tolower(m$DOI %||% doi),
+    title = trimws(unlist(m$title)[1] %||% NA_character_),
+    abstract = abstract,
+    authors = authors,
+    year = if (length(parts)) as.integer(parts[[1]]) else NA_integer_,
+    journal = unlist(m$`container-title`)[1] %||% NA_character_,
+    source = "crossref",
+    fetched = as.character(Sys.Date())
+  )
 }
