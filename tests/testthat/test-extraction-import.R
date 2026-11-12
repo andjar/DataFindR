@@ -57,3 +57,24 @@ test_that("missing or unsupported full texts fail per study, not the batch", {
   expect_match(res$error[1], "not found")
   expect_match(res$error[2], "Unsupported")
 })
+
+test_that("the project vocabulary reaches the prompt and synonyms are canonicalized on import", {
+  p <- local_project()
+  metawoRld::add_variable_synonym(p, "X-level", "Biomarker X", unit = "pg/mL")
+  r <- metawoRld::read_rules(p)
+  r$group_categories <- list(Case = list(synonyms = list("Cases")), Control = list(description = "Healthy pregnant women"))
+  metawoRld:::.write_rules(file.path(p, "_rules.yml"), r)
+
+  pr <- df_extraction_prompt("10.1/x", p, metadata = list(title = "T"))
+  expect_match(pr, "- Biomarker X (X-level); unit: pg/mL", fixed = TRUE)
+  expect_match(pr, "- Control: Healthy pregnant women", fixed = TRUE)
+  expect_false(grepl("{{", pr, fixed = TRUE))
+
+  syn <- function(contents) { x <- good_extraction(contents); x$data_points[[1]]$variable_name <- "x-level"; x }
+  f <- tempfile(fileext = ".txt"); writeLines("text", f)
+  suppressMessages(df_extract_batch(mock_chat(syn), c("10.1/x" = f), p))
+  suppressMessages(df_import_batch("10.1/x", p))
+  d <- metawoRld::read_study(p, "10.1/x")$data
+  expect_equal(d$variable_name, c("Biomarker X", "X"))
+  expect_equal(d$notes[1], "Reported as 'x-level'.")
+})

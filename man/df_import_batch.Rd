@@ -8,7 +8,8 @@ df_import_batch(
   identifiers = NULL,
   metawoRld_path = ".",
   overwrite = FALSE,
-  merge_metadata = TRUE
+  merge_metadata = TRUE,
+  canonical_names = TRUE
 )
 }
 \arguments{
@@ -17,7 +18,7 @@ extraction that is not yet in the project.}
 
 \item{metawoRld_path}{Project root.}
 
-\item{overwrite, merge_metadata}{See \code{\link[=df_import_extraction]{df_import_extraction()}}.}
+\item{overwrite, merge_metadata, canonical_names}{See \code{\link[=df_import_extraction]{df_import_extraction()}}.}
 }
 \value{
 A tibble with \code{identifier}, \code{status} (\code{"imported"} or \code{"failed"}),

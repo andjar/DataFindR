@@ -20,3 +20,11 @@ A single string.
 \description{
 Build the extraction prompt for one study
 }
+\details{
+The variable names and group categories defined in the project's
+\verb{_rules.yml} are included (placeholders \code{{{known_variables}}} and
+\code{{{group_categories}}}), so the LLM uses the project's vocabulary. Adding
+synonyms does not make cached extractions outdated, because that would
+trigger costly re-extraction of every study; use \code{force = TRUE} in
+\code{\link[=df_extract_batch]{df_extract_batch()}} to redo studies deliberately.
+}
