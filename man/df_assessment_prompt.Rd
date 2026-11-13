@@ -16,7 +16,7 @@ from \code{\link[=df_fetch_metadata]{df_fetch_metadata()}}.}
 A single string.
 }
 \description{
-Fills the project's \verb{_assessment_prompt.txt} with the project description,
+Fills the project's \code{prompts/screening.txt} with the project description,
 criteria and the study's title and abstract. Useful to inspect exactly what
 is sent to the LLM.
 }

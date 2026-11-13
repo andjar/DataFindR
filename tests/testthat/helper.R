@@ -6,6 +6,7 @@ local_project <- function(env = parent.frame()) {
     exclusion_criteria = c("Animal study"),
     git_init = FALSE, website = FALSE
   ))
+  metawoRld::add_person(path, "ahj", "Anders", roles = c("admin", "screener", "extractor", "verifier", "arbiter"))
   withr::defer(unlink(dirname(path), recursive = TRUE), envir = env)
   path
 }

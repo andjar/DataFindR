@@ -63,7 +63,7 @@ A tibble with one row per identifier: \code{identifier}, \code{status}
 \description{
 For each identifier: gets metadata (from the cache, or fetched and cached),
 fills the project's assessment prompt, asks the LLM for a structured
-decision following \verb{_assessment_schema.yml}, validates it, and caches the
+decision following \code{forms/screening.yml}, validates it, and caches the
 result together with its provenance (model, token use, cost and a
 fingerprint of the prompt, schema and criteria).
 }

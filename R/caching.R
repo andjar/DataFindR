@@ -135,31 +135,35 @@ df_clear_cache <- function(identifiers = NULL, type = c("metadata", "assessment"
   invisible(length(files))
 }
 
-#' Status of every study in the pipeline
+#' Progress of each record
 #'
-#' Combines the metadata, assessment and extraction caches with the studies
-#' already imported into the metawoRld project.
+#' Combines the metadata, assessment and extraction caches with the
+#' project's submissions and accepted studies.
 #'
 #' @param metawoRld_path Project root.
 #' @param chat Optional ellmer chat used for assessment/extraction. If given,
 #'   `assessment_stale`/`extraction_stale` show whether the cached result was
-#'   produced with a different prompt, schema, criteria or model.
-#' @return A tibble with one row per identifier: `has_metadata`, `has_abstract`,
-#'   `decision`, `score`, `assessment_source`, `extracted`,
-#'   `extraction_errors` (number of schema problems), `imported`, and the
-#'   staleness columns.
+#'   produced with a different prompt, form, criteria or model.
+#' @return A tibble with one row per identifier: `has_metadata`,
+#'   `has_abstract`, `decision`, `score`, `assessment_source`, `extracted`,
+#'   `extraction_errors` (number of form problems), `submitted` (the cached
+#'   extraction was submitted), `study_id` and `accepted` (the study has
+#'   accepted data in `data/`), and the staleness columns.
 #' @export
 df_status <- function(metawoRld_path = ".", chat = NULL) {
   proj <- .check_project(metawoRld_path)
-  imported <- metawoRld::list_studies(proj)
-  ids <- unique(c(.cached_ids(proj, "metadata"), .cached_ids(proj, "assessment"),
-                  .cached_ids(proj, "extraction"), imported))
+  index <- .report_index(proj)
+  ids <- unique(c(.cached_ids(proj, "metadata"), .cached_ids(proj, "assessment"), .cached_ids(proj, "extraction")))
   a_hash <- if (!is.null(chat)) .assessment_hash(proj, .model_name(chat)) else NA
   e_hash <- if (!is.null(chat)) .extraction_hash(proj, .model_name(chat)) else NA
   rows <- lapply(ids, function(id) {
     m <- .cache_read(id, "metadata", proj)
     a <- .cache_get_entry(id, "assessment", proj)
     e <- .cache_get_entry(id, "extraction", proj)
+    doi <- if (metawoRld::identifier_type(id) == "doi") id else as.character(m$doi %||% "")
+    pmid <- if (metawoRld::identifier_type(id) == "pmid") id else as.character(m$pmid %||% "")
+    acc <- .study_for_report(index, doi, pmid, "data")
+    sid <- if (!is.na(acc)) acc else as.character(e$submission$study_id %||% .study_for_report(index, doi, pmid))
     list(
       identifier = id,
       title = as.character(m$title %||% NA_character_),
@@ -172,49 +176,31 @@ df_status <- function(metawoRld_path = ".", chat = NULL) {
       extracted = !is.null(e),
       extraction_errors = if (is.null(e)) NA_integer_ else length(e$provenance$validation_errors),
       extraction_stale = if (is.null(e) || is.null(chat)) NA else !.entry_current(e, e_hash),
-      imported = id %in% imported
+      submitted = !is.null(e$submission),
+      study_id = sid,
+      accepted = !is.na(acc)
     )
   })
-  if (!length(rows)) {
-    return(dplyr::tibble(identifier = character(0), title = character(0), has_metadata = logical(0),
+  empty <- dplyr::tibble(identifier = character(0), title = character(0), has_metadata = logical(0),
                          has_abstract = logical(0), decision = character(0), score = numeric(0),
                          assessment_source = character(0), assessment_stale = logical(0),
                          extracted = logical(0), extraction_errors = integer(0),
-                         extraction_stale = logical(0), imported = logical(0)))
-  }
-  dplyr::bind_rows(rows)
+                         extraction_stale = logical(0), submitted = logical(0), study_id = character(0),
+                         accepted = logical(0))
+  dplyr::bind_rows(c(list(empty), rows))
 }
 
 #' Counts for a PRISMA flow diagram
 #'
+#' Deprecated: PRISMA counts come from the project's record registry and
+#' screening log, which DataFindR fills. Use [metawoRld::prisma_counts()].
+#'
 #' @param metawoRld_path Project root.
-#' @return A tibble with `stage` and `n`: records identified, screened,
-#'   excluded at screening (with a row per exclusion reason when available),
-#'   needing manual review, included for full text, extracted and included in
-#'   the review (imported).
+#' @return See [metawoRld::prisma_counts()].
 #' @export
 df_prisma_counts <- function(metawoRld_path = ".") {
-  proj <- .check_project(metawoRld_path)
-  st <- df_status(proj)
-  assess <- df_read_cache("assessment", proj)
-  reasons <- vapply(assess, function(a) {
-    if (identical(a$result$decision, "Exclude")) as.character(a$result$exclusion_reason %||% "Not specified") else NA_character_
-  }, character(1))
-  reasons <- reasons[!is.na(reasons)]
-  reasons[!nzchar(reasons)] <- "Not specified"
-  reason_tab <- if (length(reasons)) sort(table(reasons), decreasing = TRUE) else integer(0)
-  dplyr::bind_rows(
-    dplyr::tibble(
-      stage = c("Records identified", "Records screened", "Excluded at screening"),
-      n = c(nrow(st), sum(!is.na(st$decision)), sum(st$decision %in% "Exclude"))
-    ),
-    dplyr::tibble(stage = paste0("  Excluded: ", names(reason_tab)), n = as.integer(reason_tab)),
-    dplyr::tibble(
-      stage = c("Needs manual review", "Included for full-text review", "Data extracted", "Included in review"),
-      n = c(sum(st$decision %in% "Needs manual review"), sum(st$decision %in% "Include"),
-            sum(st$extracted), sum(st$imported))
-    )
-  )
+  .Deprecated("metawoRld::prisma_counts")
+  metawoRld::prisma_counts(.check_project(metawoRld_path))
 }
 
 #' Studies waiting for data extraction

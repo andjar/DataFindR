@@ -13,7 +13,7 @@
 df_shiny_assess <- function(metawoRld_path = ".", chat = NULL, launch.browser = TRUE) {
   rlang::check_installed("shiny", reason = "to run the screening app.")
   proj <- .check_project(metawoRld_path)
-  schema <- metawoRld::get_schema(proj, "assessment")
+  schema <- metawoRld::get_schema(proj, "screening")
   decisions <- unlist(schema$decision$`_values`)
 
   ui <- shiny::fluidPage(
@@ -39,7 +39,7 @@ df_shiny_assess <- function(metawoRld_path = ".", chat = NULL, launch.browser = 
         shiny::radioButtons("decision", NULL, decisions),
         shiny::textAreaInput("rationale", "Rationale", rows = 3),
         shiny::textInput("reason", "Exclusion reason"),
-        shiny::textInput("reviewer", "Reviewer", ""),
+        shiny::textInput("reviewer", "Reviewer id (people.yml)", getOption("metawoRld.person", "")),
         shiny::actionButton("save", "Save manual decision", class = "btn-success")
       ),
       shiny::mainPanel(

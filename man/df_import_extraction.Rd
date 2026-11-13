@@ -2,22 +2,25 @@
 % Please edit documentation in R/importing.R
 \name{df_import_extraction}
 \alias{df_import_extraction}
-\title{Import a cached extraction into the metawoRld project}
+\title{Submit a cached extraction to the metawoRld project}
 \usage{
 df_import_extraction(
   identifier,
   metawoRld_path = ".",
-  overwrite = FALSE,
+  study_id = NULL,
   merge_metadata = TRUE,
-  canonical_names = TRUE
+  canonical_names = TRUE,
+  resubmit = FALSE
 )
 }
 \arguments{
-\item{identifier}{Study identifier.}
+\item{identifier}{Study identifier (DOI or PMID of the report).}
 
 \item{metawoRld_path}{Project root.}
 
-\item{overwrite}{Replace the study if it was imported before?}
+\item{study_id}{Study id to submit under. Defaults to the study the report
+already belongs to, else \code{\link[metawoRld:is_study_id]{metawoRld::suggest_study_id()}} from the first
+author and year.}
 
 \item{merge_metadata}{Use fetched title, authors, year, journal, DOI, PMID
 and abstract when available? Defaults to \code{TRUE}.}
@@ -26,14 +29,19 @@ and abstract when available? Defaults to \code{TRUE}.}
 project's \verb{_rules.yml} with the canonical name (e.g. "IL6" -> "IL-6")?
 The name as reported is kept in the data point's \code{notes}. Defaults to
 \code{TRUE}.}
+
+\item{resubmit}{Submit again even if this cached extraction was submitted
+before? Defaults to \code{FALSE}.}
 }
 \value{
-The study folder, invisibly.
+A list with \code{study_id} and \code{extraction_id}, invisibly.
 }
 \description{
 Takes the cached extraction, optionally replaces bibliographic fields with
 the fetched metadata (which is usually more reliable than the LLM's
-reading), and stores the study with \code{\link[metawoRld:add_study_data]{metawoRld::add_study_data()}}, which
-validates it against the schema. The study is stored under its DOI/PMID,
-so cache and project stay linked.
+reading), and submits it with \code{\link[metawoRld:submit_study]{metawoRld::submit_study()}}. The submission
+records DataFindR as the tool, the LLM model and the hash of the full text
+the values were read from. It is validated on submission and waits in
+\verb{submissions/} until a person accepts it (\code{\link[metawoRld:accept_submission]{metawoRld::accept_submission()}})
+or reconciles it with another extraction (\code{\link[metawoRld:reconcile]{metawoRld::reconcile()}}).
 }

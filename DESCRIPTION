@@ -1,6 +1,6 @@
 Package: DataFindR
 Title: LLM-Assisted Screening and Data Extraction for Living Systematic Reviews
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person("Anders Hagen", "Jarmund", , "anders.h.jarmund@ntnu.no", role = c("aut", "cre"),
     comment = c(ORCID = "0000-0002-3923-1637"))
@@ -26,7 +26,7 @@ Imports:
     glue,
     httr2,
     jsonlite,
-    metawoRld (>= 0.2.0),
+    metawoRld (>= 0.3.0),
     rlang,
     utils,
     xml2,
