@@ -28,6 +28,12 @@ df_assessment_prompt <- function(metadata, metawoRld_path = ".") {
 #' @param metawoRld_path Project root.
 #' @param metadata Optional known bibliographic metadata; by default taken from
 #'   the metadata cache.
+#' @details The variable names and group categories defined in the project's
+#'   `_rules.yml` are included (placeholders `{{known_variables}}` and
+#'   `{{group_categories}}`), so the LLM uses the project's vocabulary. Adding
+#'   synonyms does not make cached extractions outdated, because that would
+#'   trigger costly re-extraction of every study; use `force = TRUE` in
+#'   [df_extract_batch()] to redo studies deliberately.
 #' @return A single string.
 #' @export
 df_extraction_prompt <- function(identifier, metawoRld_path = ".", metadata = NULL) {
@@ -41,11 +47,14 @@ df_extraction_prompt <- function(identifier, metawoRld_path = ".", metadata = NU
     keep <- !is.na(vals) & nzchar(vals) & vals != "NA"
     paste0("- ", f[keep], ": ", vals[keep], collapse = "\n")
   }
+  vocab <- metawoRld::rules_for_prompt(proj)
   .fill(.read_prompt(proj, "extraction"), list(
     project_name = cfg$project_name %||% "",
     project_description = cfg$project_description %||% "",
     identifier = id,
-    known_metadata = known
+    known_metadata = known,
+    known_variables = vocab$known_variables,
+    group_categories = vocab$group_categories
   ))
 }
 
