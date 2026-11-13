@@ -54,7 +54,8 @@ so cache and project stay linked.</p>
 <span>  <span class="va">identifier</span>,</span>
 <span>  metawoRld_path <span class="op">=</span> <span class="st">"."</span>,</span>
 <span>  overwrite <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  merge_metadata <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  merge_metadata <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  canonical_names <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -77,6 +78,13 @@ so cache and project stay linked.</p>
 <dt id="arg-merge-metadata">merge_metadata<a class="anchor" aria-label="anchor" href="#arg-merge-metadata"></a></dt>
 <dd><p>Use fetched title, authors, year, journal, DOI, PMID
 and abstract when available? Defaults to <code>TRUE</code>.</p></dd>
+
+
+<dt id="arg-canonical-names">canonical_names<a class="anchor" aria-label="anchor" href="#arg-canonical-names"></a></dt>
+<dd><p>Replace variable names that are synonyms in the
+project's <code>_rules.yml</code> with the canonical name (e.g. "IL6" -&gt; "IL-6")?
+The name as reported is kept in the data point's <code>notes</code>. Defaults to
+<code>TRUE</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

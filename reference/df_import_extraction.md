@@ -14,7 +14,8 @@ df_import_extraction(
   identifier,
   metawoRld_path = ".",
   overwrite = FALSE,
-  merge_metadata = TRUE
+  merge_metadata = TRUE,
+  canonical_names = TRUE
 )
 ```
 
@@ -36,6 +37,12 @@ df_import_extraction(
 
   Use fetched title, authors, year, journal, DOI, PMID and abstract when
   available? Defaults to `TRUE`.
+
+- canonical_names:
+
+  Replace variable names that are synonyms in the project's `_rules.yml`
+  with the canonical name (e.g. "IL6" -\> "IL-6")? The name as reported
+  is kept in the data point's `notes`. Defaults to `TRUE`.
 
 ## Value
 

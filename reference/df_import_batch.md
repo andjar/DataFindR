@@ -9,7 +9,8 @@ df_import_batch(
   identifiers = NULL,
   metawoRld_path = ".",
   overwrite = FALSE,
-  merge_metadata = TRUE
+  merge_metadata = TRUE,
+  canonical_names = TRUE
 )
 ```
 
@@ -24,7 +25,7 @@ df_import_batch(
 
   Project root.
 
-- overwrite, merge_metadata:
+- overwrite, merge_metadata, canonical_names:
 
   See
   [`df_import_extraction()`](https://andjar.github.io/DataFindR/reference/df_import_extraction.md).
