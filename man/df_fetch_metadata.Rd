@@ -2,41 +2,38 @@
 % Please edit documentation in R/fetching.R
 \name{df_fetch_metadata}
 \alias{df_fetch_metadata}
-\title{Fetch Metadata for a Study Identifier (DOI or PMID)}
+\title{Fetch bibliographic metadata for DOIs and PMIDs}
 \usage{
-df_fetch_metadata(identifier, email = NULL, ncbi_api_key = NULL)
+df_fetch_metadata(
+  identifiers,
+  email = Sys.getenv("DATAFINDR_EMAIL"),
+  api_key = Sys.getenv("NCBI_API_KEY")
+)
 }
 \arguments{
-\item{identifier}{Character string. The DOI or PMID of the study.}
+\item{identifiers}{Character vector of DOIs and/or PMIDs. Prefixes such as
+\verb{https://doi.org/} or \verb{PMID:} are removed.}
 
-\item{email}{Character string (optional). Your email address, recommended
-for NCBI Entrez politeness when fetching from PubMed. If not provided,
-\code{rentrez} might issue a warning.}
+\item{email}{Contact e-mail sent to NCBI and Crossref (recommended; NCBI
+may block anonymous heavy use). Defaults to the \code{DATAFINDR_EMAIL}
+environment variable.}
 
-\item{ncbi_api_key}{Character string (optional). Your NCBI API key for
-potentially higher rate limits. Set using \code{rentrez::set_entrez_key()}.}
+\item{api_key}{NCBI API key (allows 10 instead of 3 requests per second).
+Defaults to the \code{NCBI_API_KEY} environment variable.}
 }
 \value{
-A list containing the fetched metadata (identifier, type, title,
-abstract, authors, year, journal) or \code{NULL} if fetching fails or the
-identifier type is not recognized. Issues warnings on failure.
+A named list (names are normalized identifiers). Each element is a
+list with \code{identifier}, \code{doi}, \code{pmid}, \code{title}, \code{abstract}, \code{authors},
+\code{year}, \code{journal}, \code{source} and \code{fetched}, or \code{NULL} if nothing was found.
 }
 \description{
-Retrieves bibliographic metadata (title, abstract, authors, year, journal)
-for a given DOI or PMID using online services (Crossref, PubMed).
+Looks up title, abstract, authors, year, journal, DOI and PMID. PubMed is
+tried first (structured abstracts are kept, with section labels); DOIs not
+indexed in PubMed fall back to Crossref. Requests are batched and
+rate-limited according to NCBI's rules.
 }
 \examples{
 \dontrun{
-# Fetch metadata for a known PMID (requires internet connection)
-pmid_meta <- df_fetch_metadata("25376210", email = "your.email@example.com")
-print(pmid_meta)
-
-# Fetch metadata for a known DOI (requires internet connection and rcrossref)
-doi_meta <- df_fetch_metadata("10.1038/nature14539", email = "your.email@example.com")
-print(doi_meta)
-
-# Example of a potentially invalid identifier
-invalid_meta <- df_fetch_metadata("invalid-id")
-print(invalid_meta)
+df_fetch_metadata(c("31772108", "10.1038/nature14539"), email = "me@example.org")
 }
 }

@@ -1,425 +1,117 @@
-#' Shiny Application for Interactive Data Extraction
+#' Interactive extraction app
 #'
-#' This file defines a Shiny application that provides a user interface for
-#' managing the data extraction process from full-text documents, often following
-#' an assessment phase. It helps in generating extraction prompts, (optionally)
-#' using LLMs for extraction, and saving structured data.
-#' Launch Shiny App for Extracting Study Data
+#' Pick an included study, run the LLM on its full text, review and correct
+#' the extracted JSON with live schema validation, save it, and import it into
+#' the metawoRld project.
 #'
-#' Launches a Shiny application to manage the data extraction phase. It helps
-#' identify studies pending extraction, generate prompts, optionally run LLM
-#' extraction, allow manual JSON input/editing, and save results to the cache.
-#'
-#' @param launch.browser Logical, passed to `shiny::runApp`. Whether to launch
-#'   the app in the default browser.
-#' @param ... Additional arguments passed to `shiny::runApp` (e.g., `port`, `host`).
-#'
-#' @details
-#' The application facilitates the data extraction workflow by allowing users to:
-#' \itemize{
-#'   \item Specify a `metawoRld` project path.
-#'   \item View a list of studies that have been assessed as "Include" (or similar, based
-#'         on `.find_pending_extraction_studies`) and do not yet have extraction data in the cache.
-#'   \item Select a study from the pending list.
-#'   \item View any cached metadata for the selected study.
-#'   \item View the generated extraction prompt, which is based on the project's
-#'         data extraction schema defined in `_metawoRld.yml`.
-#'   \item Provide a file path to the full-text document (currently plain text `.txt` files).
-#'   \item (Optionally) Trigger an LLM call to extract data from the provided text file
-#'         based on the generated prompt and project schema. The LLM is expected to return JSON.
-#'   \item View the JSON output from the LLM or manually input/edit extraction data in JSON format.
-#'         The JSON should conform to the structure: `{"metadata": {...}, "data_points": [...]}`.
-#'   \item Save the (LLM-generated or manually edited) extraction JSON to the project's cache.
-#' }
-#'
-#' Prerequisites:
-#' \itemize{
-#'   \item The `shiny`, `glue`, `rlang`, `yaml`, `fs`, `jsonlite`, `purrr`, `metawoRld`
-#'         packages must be installed.
-#'   \item `rclipboard` is suggested for the "Copy Prompt" functionality.
-#'   \item For LLM calls, the appropriate API key (e.g., `OPENAI_API_KEY`, `GOOGLE_API_KEY`)
-#'         must be set as an environment variable. Refer to `ellmer` documentation.
-#'   \item The specified `metawoRld` project path must be valid and contain:
-#'         \itemize{
-#'           \item A `_metawoRld.yml` file with a defined `data_extraction_schema`.
-#'           \item Cached assessment results (used by `.find_pending_extraction_studies`).
-#'           \item An `_extraction_prompt.txt` and `_extraction_schema.yml` (or ensure
-#'                 `df_generate_extraction_prompt` and related functions can find/create them).
-#'         }
-#'   \item Full-text documents for extraction must be available as plain text (`.txt`) files
-#'         and their paths provided to the app.
-#' }
-#'
-#' @return Does not return a value; runs the Shiny application.
+#' @param metawoRld_path Project root.
+#' @param chat Optional ellmer chat object. If `NULL`, a `"provider/model"`
+#'   string can be entered in the app.
+#' @param fulltext_dir Optional folder with full texts named after the
+#'   identifiers (see [df_find_fulltexts()]).
+#' @param launch.browser Passed to [shiny::runApp()].
+#' @return Runs the app.
 #' @export
-#'
-#' @import shiny
-#' @importFrom glue glue
-#' @importFrom rlang inform warn abort is_list `%||%` check_installed is_scalar_character is_null
-#' @importFrom yaml read_yaml
-#' @importFrom fs path_norm dir_exists file_exists path path_ext file_size
-#' @importFrom utils packageVersion browseURL askYesNo
-#' @importFrom jsonlite fromJSON toJSON validate
-#' @importFrom tools file_path_sans_ext
-#' @importFrom purrr compact
-#' @importFrom metawoRld .desanitize_id .sanitize_id
-df_shiny_extract <- function(launch.browser = TRUE, ...) {
+df_shiny_extract <- function(metawoRld_path = ".", chat = NULL, fulltext_dir = NULL, launch.browser = TRUE) {
+  rlang::check_installed("shiny", reason = "to run the extraction app.")
+  proj <- .check_project(metawoRld_path)
+  schema <- metawoRld::get_schema(proj, "extraction")
+  fulltexts <- if (!is.null(fulltext_dir)) df_find_fulltexts(fulltext_dir) else character(0)
 
-  # --- Check suggested packages ---
-  rlang::check_installed("shiny", reason = "to run the interactive extraction app.")
-  copy_available <- rlang::is_installed("rclipboard")
-
-  # --- UI Definition ---
-  ui <- fluidPage(
-    title = "DataFindR Study Extraction",
-    if (copy_available) rclipboard::rclipboardSetup(),
-
-    fluidRow( # Use fluidRow for better control
-      column(4, # Sidebar Column
-             wellPanel( # Use wellPanel for visual grouping
-               h4("1. Project & Study Selection"),
-               textInput("metawoRldPathExtract", "metawoRld Project Path:", value = ".", placeholder = "Path to project root"),
-               actionButton("refreshPending", "Refresh Pending List", icon = icon("sync")),
-               selectInput("pendingStudySelect", "Study Pending Extraction:", choices = c(""), selected = ""),
-               hr(),
-               h4("2. Paper Full Text Input"),
-               textInput("paperPath", "Path to Full Text (.txt file):", placeholder = "/path/to/paper.txt"),
-               p(em("Provide path to a plain text file. PDF processing not yet supported here.")),
-               hr(),
-               h4("3. LLM Extraction (Optional)"),
-               actionButton("runExtraction", "Run LLM Extraction", icon = icon("robot"), class = "btn-primary"),
-               p(em("Uses paper text & generated prompt. Requires API key.")),
-               selectInput("llmServiceExtract", "LLM Service", choices = c("openai", "google"), selected = "google"),
-               textInput("llmModelExtract", "LLM Model", value = "gemini-2.5-flash-preview-04-17") # Use a capable model
-             )
-      ), # End Sidebar Column
-
-      column(8, # Main Panel Column
-             tabsetPanel(
-               id = "mainTabs",
-               tabPanel("Prompt & Extraction",
-                        h4("Identifier:"),
-                        verbatimTextOutput("displayIdentifier", placeholder = TRUE),
-                        h4("Generated Extraction Prompt:"),
-                        uiOutput("extractionPromptSection"), # For copy button etc.
-                        hr(),
-                        h4("Extraction JSON Result / Manual Input:"),
-                        textAreaInput("extractionJsonInput", label = NULL, rows = 20, width="100%",
-                                      placeholder = 'LLM result appears here, or paste/edit manually...'),
-                        actionButton("saveExtractionJson", "Save JSON to Extraction Cache", icon = icon("save"), class = "btn-success")
-
-               ),
-               tabPanel("Metadata Preview",
-                        h4("Cached Metadata Preview (if available)"),
-                        verbatimTextOutput("metadataPreview", placeholder = TRUE)
-               )
-             ) # End tabsetPanel
-      ) # End Main Panel Column
-    ) # End fluidRow
-  ) # End fluidPage
-
-  # --- Server Logic ---
-  server <- function(input, output, session) {
-
-    # --- Reactive Values ---
-    rv <- reactiveValues(
-      pending_list = character(0),
-      selected_id = NULL,
-      project_valid = FALSE,
-      fetched_metadata = NULL, # Metadata from metadata cache for selected study
-      generated_prompt = NULL, # Generated extraction prompt string
-      extraction_result_json = "" # Stores the JSON STRING (from LLM or manual edit)
+  ui <- shiny::fluidPage(
+    shiny::titlePanel("DataFindR extraction"),
+    shiny::sidebarLayout(
+      shiny::sidebarPanel(
+        width = 4,
+        shiny::radioButtons("filter", "Show", c("Waiting for extraction" = "todo",
+                                                "Extracted, not imported" = "review",
+                                                "All included" = "all")),
+        shiny::selectInput("id", "Study", choices = NULL),
+        shiny::textInput("file", "Full text (pdf, txt, html, xml)"),
+        if (is.null(chat)) shiny::textInput("model", "LLM (provider/model)", "anthropic/claude-sonnet-4-5"),
+        shiny::actionButton("run", "Run LLM extraction", class = "btn-primary"),
+        shiny::hr(),
+        shiny::actionButton("save", "Save JSON", class = "btn-success"),
+        shiny::actionButton("import", "Import into project", class = "btn-warning")
+      ),
+      shiny::mainPanel(
+        width = 8,
+        shiny::h4("Validation"),
+        shiny::verbatimTextOutput("problems"),
+        shiny::h4("Extraction (JSON, editable)"),
+        shiny::textAreaInput("json", NULL, rows = 30, width = "100%")
+      )
     )
+  )
 
-    # --- Helper: Update Pending List ---
-    update_pending_list <- function(show_notification = FALSE) {
-      req(input$metawoRldPathExtract)
-      proj_path <- fs::path_norm(input$metawoRldPathExtract)
-      if (!rv$project_valid) return(NULL) # Ensure project is valid
+  server <- function(input, output, session) {
+    refresh <- shiny::reactiveVal(0)
+    ids <- shiny::reactive({
+      refresh()
+      st <- df_status(proj)
+      inc <- st$decision %in% "Include" | st$extracted
+      keep <- switch(input$filter,
+                     todo = inc & !st$extracted,
+                     review = st$extracted & !st$imported,
+                     inc)
+      st$identifier[keep]
+    })
+    shiny::observe({
+      ch <- ids()
+      sel <- shiny::isolate(input$id)
+      shiny::updateSelectInput(session, "id", choices = ch, selected = if (!is.null(sel) && sel %in% ch) sel else ch[1])
+    })
+    shiny::observeEvent(input$id, {
+      shiny::req(input$id)
+      shiny::updateTextInput(session, "file", value = unname(fulltexts[input$id]) %||% "")
+      e <- .cache_get_entry(input$id, "extraction", proj)
+      shiny::updateTextAreaInput(session, "json", value = if (is.null(e)) "" else
+        as.character(jsonlite::toJSON(e$result, auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")))
+    })
 
-      current_selection <- input$pendingStudySelect
+    parsed <- shiny::reactive({
+      shiny::req(nzchar(input$json))
+      tryCatch(jsonlite::fromJSON(input$json, simplifyVector = FALSE), error = function(e) e)
+    })
+    output$problems <- shiny::renderText({
+      p <- parsed()
+      if (inherits(p, "error")) return(paste("Invalid JSON:", conditionMessage(p)))
+      errs <- .extraction_problems(p, schema)
+      if (!length(errs)) "No problems found." else paste(errs, collapse = "\n")
+    })
 
-      pending <- tryCatch({
-        # Decision threshold could be configurable later
-        .find_pending_extraction_studies(proj_path, decision_threshold = c("Include"))
-      }, error = function(e) {
-        showNotification(paste("Error finding pending studies:", e$message), type="error")
-        character(0)
+    shiny::observeEvent(input$run, {
+      shiny::req(input$id, nzchar(input$file))
+      the_chat <- chat %||% input$model
+      shiny::withProgress(message = "Extracting... this can take a few minutes", {
+        res <- tryCatch(df_extract(the_chat, input$id, input$file, proj, force = TRUE), error = function(e) e)
       })
-
-      rv$pending_list <- pending
-
-      # Preserve selection if possible
-      if(current_selection %in% pending){
-        updateSelectInput(session, "pendingStudySelect", choices = pending, selected = current_selection)
+      if (inherits(res, "error")) {
+        shiny::showNotification(conditionMessage(res), type = "error", duration = NULL)
       } else {
-        updateSelectInput(session, "pendingStudySelect", choices = pending, selected = "")
+        shiny::updateTextAreaInput(session, "json", value = as.character(
+          jsonlite::toJSON(res, auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")))
       }
-
-      if(show_notification){
-        showNotification(paste(length(pending), "studies pending extraction found."), type="message", duration = 5)
-      }
-    }
-
-    # --- Validate Project Path ---
-    observe({
-      req(input$metawoRldPathExtract)
-      proj_path <- fs::path_norm(input$metawoRldPathExtract)
-      config_path <- fs::path(proj_path, "_metawoRld.yml")
-
-      if (fs::dir_exists(proj_path) && fs::file_exists(config_path)) {
-        # Basic check, schema validity checked when generating prompt
-        rv$project_valid <- TRUE
-        removeNotification("proj_extract_warn")
-        showNotification("metawoRld project found.", type="message", duration = 5, id="proj_extract_msg")
-        update_pending_list() # Update list once project is valid
+    })
+    shiny::observeEvent(input$save, {
+      p <- parsed()
+      if (inherits(p, "error")) return(shiny::showNotification("Fix the JSON first.", type = "error"))
+      errs <- suppressWarnings(df_save_extraction(input$id, p, proj))
+      shiny::showNotification(if (length(errs)) "Saved (with validation problems)." else "Saved.",
+                              type = if (length(errs)) "warning" else "message")
+      refresh(refresh() + 1)
+    })
+    shiny::observeEvent(input$import, {
+      r <- tryCatch(df_import_extraction(input$id, proj, overwrite = TRUE), error = function(e) e)
+      if (inherits(r, "error")) {
+        msg <- if (!is.null(r$validation_errors)) paste(utils::head(r$validation_errors, 5), collapse = "\n") else conditionMessage(r)
+        shiny::showNotification(paste("Import failed:", msg), type = "error", duration = NULL)
       } else {
-        rv$project_valid <- FALSE
-        rv$pending_list <- character(0)
-        updateSelectInput(session, "pendingStudySelect", choices = "", selected = "")
-        removeNotification("proj_extract_msg")
-        showNotification("Valid metawoRld project path not found.", type="warning", duration = 10, id="proj_extract_warn")
+        shiny::showNotification("Imported.")
       }
+      refresh(refresh() + 1)
     })
+  }
 
-    # --- Refresh Pending List Button ---
-    observeEvent(input$refreshPending, {
-      update_pending_list(show_notification = TRUE)
-    })
-
-    # --- Actions on Study Selection Change ---
-    observe({
-      selected_id <- input$pendingStudySelect
-      rv$selected_id <- if(is.null(selected_id) || selected_id == "") NULL else selected_id
-
-      # Clear outputs when selection changes
-      rv$fetched_metadata <- NULL
-      rv$generated_prompt <- NULL
-      rv$extraction_result_json <- ""
-      updateTextAreaInput(session, "extractionJsonInput", value = "")
-      updateTextInput(session, "paperPath", value = "") # Clear paper path too
-
-
-      if (!is.null(rv$selected_id)) {
-        # 1. Try to load metadata from cache
-        meta <- .check_cache(rv$selected_id, type = "metadata", metawoRld_path = input$metawoRldPathExtract)
-        if(is.list(meta)) {
-          rv$fetched_metadata <- meta
-        } else {
-          rv$fetched_metadata <- NULL
-          showNotification("Metadata not found in cache for selected study. Prompt generation might be less focused.", type="warning", duration = 8)
-        }
-
-        # 2. Generate extraction prompt
-        if(rv$project_valid) {
-          prompt_text <- tryCatch({
-            df_generate_extraction_prompt(
-              metawoRld_path = input$metawoRldPathExtract,
-              identifier = rv$selected_id,
-              fetched_metadata = rv$fetched_metadata # Pass metadata if found
-            )
-          }, error = function(e) {
-            showNotification(paste("Error generating prompt:", e$message), type="error")
-            NULL
-          })
-          rv$generated_prompt <- prompt_text
-        } else {
-          rv$generated_prompt <- NULL
-        }
-      }
-    })
-
-    # --- Display Identifier ---
-    output$displayIdentifier <- renderText({ rv$selected_id %||% "N/A" })
-
-    # --- Display Metadata Preview ---
-    output$metadataPreview <- renderText({
-      meta <- rv$fetched_metadata
-      if(is.null(meta)) return("No metadata loaded from cache.")
-      # Simple preview
-      paste(
-        glue::glue("Title: {meta$title %||% 'N/A'}"),
-        glue::glue("Authors: {paste(unlist(meta$authors %||% 'N/A'), collapse=', ')}"),
-        glue::glue("Year: {meta$year %||% 'N/A'}"),
-        glue::glue("Journal: {meta$journal %||% 'N/A'}"),
-        # Add abstract preview if useful, might be long
-        # glue::glue("Abstract: {substr(meta$abstract %||% 'N/A', 1, 200)}..."),
-        sep="\n"
-      )
-    })
-
-    # --- Display Prompt and Copy Button ---
-    output$extractionPromptSection <- renderUI({
-      prompt_text <- rv$generated_prompt
-      req(prompt_text)
-      elements <- list(
-        tags$textarea(id = "extractionPromptDisplay", readonly = "readonly", rows = 15, style = "width:100%; font-family: monospace;", prompt_text)
-      )
-      if (copy_available) {
-        elements <- append(elements, list(
-          rclipboard::rclipButton(
-            "copyPromptBtn", "Copy Prompt", clipText = prompt_text,
-            icon = icon("copy"), class="btn-sm btn-outline-secondary" ) ))
-      } else {
-        elements <- append(elements, list(p(em("Install 'rclipboard' package to enable copy button."))))
-      }
-      return(tagList(elements))
-    })
-
-    # --- Run LLM Extraction ---
-    observeEvent(input$runExtraction, {
-      req(rv$selected_id, rv$generated_prompt, input$paperPath)
-      req(rv$project_valid)
-
-      paper_file_path <- fs::path_norm(input$paperPath)
-
-      if(!fs::file_exists(paper_file_path)) {
-        showNotification("Paper text file not found at specified path.", type="error")
-        return()
-      }
-      if(tolower(fs::path_ext(paper_file_path)) != "txt") {
-        showNotification("Please provide a path to a .txt file.", type="warning")
-        # Later, integrate PDF handling here
-        return()
-      }
-
-      # Read paper content
-      paper_content <- tryCatch({
-        paste(readLines(paper_file_path, warn = FALSE), collapse = "\n")
-      }, error = function(e){
-        showNotification(paste("Error reading paper file:", e$message), type="error")
-        return(NULL)
-      })
-      if(is.null(paper_content)) return()
-
-      if(!nzchar(trimws(paper_content))) {
-        showNotification("Paper text file appears to be empty.", type="warning")
-        return()
-      }
-
-      # Clear previous JSON result before running
-      rv$extraction_result_json <- ""
-      updateTextAreaInput(session, "extractionJsonInput", value = "")
-
-      llm_args <- rlang::list2(
-        prompt = rv$generated_prompt,
-        model = input$llmModelExtract,
-        response_format = "json_object", # CRUCIAL for extraction
-        instructions = "You are a biomedical data extraction assistant. Respond ONLY with valid JSON.",
-        # Potentially pass other args like temperature if needed
-        temperature = 0.1, # Low temp for extraction
-        max_tokens = 100000
-      )
-
-      withProgress(message = 'Running LLM Extraction...', value = 0, {
-        tryCatch({
-          incProgress(0.5)
-          llm_response_body <- if (tolower(input$llmServiceExtract) == "openai") {
-            .call_llm_openai(!!!llm_args) # Use internal function
-          } else if (tolower(input$llmServiceExtract) == "google") {
-            inject(.call_llm_google(!!!llm_args)) # Use internal function
-          } else {
-            stop(glue::glue("LLM service '{input$llmServiceExtract}' not supported."))
-          }
-
-          # Extract content string
-          llm_json_string <- .get_llm_content_gemini(llm_response_body) %||% ""
-
-          if (llm_json_string == "") {
-            stop("LLM returned empty content.")
-          }
-
-          # Basic validation: is it valid JSON?
-          if(!jsonlite::validate(llm_json_string)) {
-            stop("LLM response was not valid JSON.")
-          }
-
-          # Update reactive value and UI text area
-          rv$extraction_result_json <- llm_json_string
-          updateTextAreaInput(session, "extractionJsonInput", value = llm_json_string)
-
-          incProgress(1)
-          showNotification("LLM Extraction complete. Review JSON below.", type = "message", duration = 8)
-
-        }, error = function(e) {
-          incProgress(1)
-          showNotification(paste("LLM Extraction Failed:", e$message), type = "error", duration = NULL)
-          rv$extraction_result_json <- "" # Clear on error
-          updateTextAreaInput(session, "extractionJsonInput", value = "")
-        }) # end tryCatch
-      }) # end withProgress
-    })
-
-
-    # --- Save Final Extraction JSON ---
-    observeEvent(input$saveExtractionJson, {
-      req(rv$selected_id)
-      req(input$metawoRldPathExtract)
-      req(input$extractionJsonInput) # Require something in the text box
-
-      identifier <- rv$selected_id
-      proj_path <- input$metawoRldPathExtract
-      json_string <- input$extractionJsonInput
-
-      if (!nzchar(trimws(json_string))) {
-        showNotification("Extraction JSON input is empty. Nothing to save.", type = "warning")
-        return()
-      }
-
-      # Validate JSON string before parsing and saving
-      if(!jsonlite::validate(json_string)) {
-        showNotification("The text entered is not valid JSON. Cannot save.", type="error")
-        return()
-      }
-
-      # Parse the JSON (final step before saving)
-      parsed_data <- tryCatch({
-        jsonlite::fromJSON(json_string, simplifyVector = FALSE)
-      }, error = function(e) {
-        showNotification(paste("Error parsing JSON:", e$message), type="error")
-        return(NULL)
-      })
-      if(is.null(parsed_data)) return()
-
-      # Basic structure check
-      if (!is.list(parsed_data) || !"metadata" %in% names(parsed_data) || !"data_points" %in% names(parsed_data)) {
-        showNotification("Parsed JSON is missing required top-level keys: 'metadata' and 'data_points'. Cannot save.", type="error")
-        return()
-      }
-
-      # Add saving metadata (optional but good practice)
-      parsed_data$extraction_timestamp <- Sys.time()
-      # Potentially record model used if it came from LLM, or mark as manual/edited
-      # if(rv$extraction_result_json == json_string) { # Check if it's unchanged from LLM
-      #parsed_data$extraction_model <- input$llmModelExtract # Record model only if directly from LLM?
-      # } else {
-      parsed_data$extraction_source <- "manual_or_edited"
-      # }
-
-      # Confirm overwrite? Cache save function will overwrite by default.
-      # Add confirmation if needed.
-
-      # Save the PARSED data object to cache
-      save_path <- .save_to_cache(
-        identifier = identifier,
-        data = parsed_data, # Save the parsed list object
-        type = "extraction",
-        metawoRld_path = proj_path
-      )
-
-      if (!is.null(save_path)) {
-        showNotification("Extraction JSON saved to cache successfully.", type = "message")
-        # Refresh pending list as this study should now be removed
-        update_pending_list()
-        # Optionally clear fields or move to next pending?
-        # updateSelectInput(session, "pendingStudySelect", selected="") # Clear selection
-      } else {
-        showNotification("Failed to save extraction JSON to cache.", type = "error")
-      }
-    })
-
-  } # end server
-
-  # --- Run the App ---
-  shinyApp(ui = ui, server = server, options = list(launch.browser = launch.browser, ...))
+  shiny::runApp(shiny::shinyApp(ui, server), launch.browser = launch.browser)
 }

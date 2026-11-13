@@ -1,0 +1,32 @@
+<?xml version="1.0" ?>
+<PubmedArticleSet>
+<PubmedArticle>
+  <MedlineCitation>
+    <PMID Version="1">11111111</PMID>
+    <Article>
+      <Journal><Title>Journal of Tests</Title><JournalIssue><PubDate><Year>2021</Year></PubDate></JournalIssue></Journal>
+      <ArticleTitle>Biomarker X in pregnant women: a cohort study.</ArticleTitle>
+      <Abstract>
+        <AbstractText Label="BACKGROUND">X may matter.</AbstractText>
+        <AbstractText Label="RESULTS">X was higher in cases.</AbstractText>
+      </Abstract>
+      <AuthorList>
+        <Author><LastName>Smith</LastName><Initials>J</Initials></Author>
+        <Author><CollectiveName>The X Group</CollectiveName></Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/ABC.1</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation>
+    <PMID Version="1">22222222</PMID>
+    <Article>
+      <Journal><Title>Rat Journal</Title><JournalIssue><PubDate><MedlineDate>2019 Jan-Feb</MedlineDate></PubDate></JournalIssue></Journal>
+      <ArticleTitle>X in rats.</ArticleTitle>
+      <AuthorList><Author><LastName>Doe</LastName><Initials>A</Initials></Author></AuthorList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList/></PubmedData>
+</PubmedArticle>
+</PubmedArticleSet>

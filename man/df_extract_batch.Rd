@@ -2,56 +2,72 @@
 % Please edit documentation in R/extraction.R
 \name{df_extract_batch}
 \alias{df_extract_batch}
-\title{Extract Data for a Batch of Studies using LLM}
+\alias{df_extract}
+\title{Extract data from full texts with an LLM}
 \usage{
 df_extract_batch(
   chat,
-  identifiers,
-  paper_paths,
-  metawoRld_path,
-  force_extract = FALSE,
-  stop_on_error = FALSE,
-  ellmer_timeout_s = 300,
-  ...
+  files,
+  metawoRld_path = ".",
+  mode = c("sequential", "parallel", "batch"),
+  force = FALSE,
+  max_active = 3,
+  batch_file = NULL,
+  wait = TRUE
 )
+
+df_extract(chat, identifier, file, metawoRld_path = ".", ...)
 }
 \arguments{
-\item{identifiers}{Character vector. A vector of DOIs and/or PMIDs for studies
-identified as relevant (e.g., having an "Include" assessment decision).}
+\item{chat}{An ellmer chat object or \code{"provider/model"} string. Use a model
+that accepts PDFs if you pass PDFs.}
 
-\item{paper_paths}{Character vector. \strong{Named} vector or list where names are
-the identifiers (matching \code{identifiers} argument) and values are the file
-paths to the corresponding full-text \strong{plain text (.txt) files}.}
+\item{files}{Named character vector of file paths, names being the study
+identifiers; or a single folder, in which case files named after the
+identifiers are used (see \code{\link[=df_find_fulltexts]{df_find_fulltexts()}}).}
 
-\item{metawoRld_path}{Character string. Path to the root of the metawoRld project.}
+\item{metawoRld_path}{Project root.}
 
-\item{force_extract}{Logical. If TRUE, bypass the extraction cache and re-run
-LLM extraction even if cached JSON exists. Defaults to FALSE.}
+\item{mode}{\code{"sequential"} (default), \code{"parallel"} or \code{"batch"} (see
+\code{\link[=df_assess_batch]{df_assess_batch()}}). Full texts are large, so mind your provider's rate
+limits when using \code{"parallel"}.}
 
-\item{stop_on_error}{Logical. If TRUE, stop the batch if any single extraction fails.
-Defaults to FALSE.}
+\item{force}{Re-extract even if a current cached result exists.}
 
-\item{...}{Additional arguments passed down to the LLM API call function
-(e.g., \code{temperature}, \code{max_tokens}).}
+\item{max_active, batch_file, wait}{See \code{\link[=df_assess_batch]{df_assess_batch()}}.}
 
-\item{service}{Character string. The LLM service to use (e.g., "openai").}
+\item{identifier}{A single study identifier.}
 
-\item{model}{Character string. The specific LLM model name (e.g., "gpt-4-turbo").}
+\item{file}{Path to its full text.}
+
+\item{...}{Further arguments passed to \code{df_extract_batch()}.}
 }
 \value{
-A data frame (tibble) summarizing the extraction attempt for each
-identifier, with columns:
-\describe{
-\item{\code{identifier}}{The DOI or PMID.}
-\item{\code{status}}{"Success" (LLM ran, JSON saved), "Cached" (used existing cache), "Skipped" (e.g., missing paper path), or "Failure".}
-\item{\code{cache_file}}{Path to the saved/checked cache file if status is "Success" or "Cached".}
-\item{\code{error_message}}{The error message if status is "Failure".}
-}
-Also prints progress and summary information.
+A tibble with \code{identifier}, \code{status} (\code{"extracted"}, \code{"cached"},
+\code{"failed"} or \code{"pending"}), \code{n_data_points}, \code{n_problems} (schema
+validation problems), \code{error}, \code{input_tokens}, \code{output_tokens}, \code{cost}.
+
+\code{df_extract()}: the extracted data as a list (\code{metadata},
+\code{data_points}), or an error.
 }
 \description{
-Runs the LLM data extraction workflow for multiple studies, taking paths to
-full-text files as input. Saves the raw JSON output from the LLM to the
-extraction cache within the \code{metawoRld} project. Does \emph{not} import into metawoRld.
-Use \code{df_import_batch} subsequently to import cached results.
+Sends each full text with the project's extraction prompt and asks for a
+structured result following \verb{_extraction_schema.yml}. The result is
+validated against the schema (including the \verb{_ref} links between data
+points and metadata) and cached with its provenance and any validation
+problems. Use \code{\link[=df_import_batch]{df_import_batch()}} to move the results into the project.
+}
+\details{
+Full texts can be PDF (sent as a document to models that support it),
+plain text/Markdown, or HTML/XML (e.g. JATS from PubMed Central), whose
+text is extracted first.
+}
+\examples{
+\dontrun{
+chat <- ellmer::chat_anthropic()
+todo <- df_pending_extraction("my_review")
+# PDFs saved as fulltext/<identifier>.pdf (DOIs with "/" replaced, see df_find_fulltexts())
+res <- df_extract_batch(chat, "my_review/fulltext", "my_review")
+df_import_batch(metawoRld_path = "my_review")
+}
 }

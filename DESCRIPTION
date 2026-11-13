@@ -1,26 +1,40 @@
 Package: DataFindR
-Title: Automated Study Assessment and Data Extraction using Large Language Models (LLMs)
-Version: 0.0.0.9000
+Title: LLM-Assisted Screening and Data Extraction for Living Systematic Reviews
+Version: 0.1.0
 Authors@R: 
     person("Anders Hagen", "Jarmund", , "anders.h.jarmund@ntnu.no", role = c("aut", "cre"),
     comment = c(ORCID = "0000-0002-3923-1637"))
-Description: Provides functions to automate the process of study relevance assessment and data extraction from research papers using Large Language Models (LLMs). Key features include fetching metadata, assessing studies based on title/abstract against user-defined criteria, extracting structured data from full-text documents, and caching results to optimize workflows. It is designed to integrate with the 'metawoRld' package for systematic review and meta-analysis projects.
+Description: Uses large language models (via 'ellmer') to screen studies by
+    title and abstract and to extract structured data from full texts into a
+    'metawoRld' project. Fetches metadata from PubMed and Crossref, caches all
+    results with their provenance inside the project, supports parallel and
+    discounted batch requests, and includes 'shiny' apps for human review.
 License: GPL (>= 3)
+URL: https://github.com/andjar/DataFindR
+BugReports: https://github.com/andjar/DataFindR/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
-Imports: 
+RoxygenNote: 7.3.1
+Depends:
+    R (>= 4.1.0)
+Imports:
+    cli,
+    digest,
+    dplyr,
+    ellmer (>= 0.3.0),
     fs,
     glue,
     httr2,
     jsonlite,
-    metawoRld,
-    rentrez (>= 1.2.3),
+    metawoRld (>= 0.1.0),
     rlang,
-    shiny,
-    dplyr,
-    ellmer
+    utils,
+    xml2,
+    yaml
 Remotes:
     andjar/metawoRld
-Suggests: 
-    rclipboard
+Suggests:
+    shiny,
+    testthat (>= 3.0.0),
+    withr
+Config/testthat/edition: 3

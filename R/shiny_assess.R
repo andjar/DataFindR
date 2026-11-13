@@ -1,421 +1,172 @@
-#' Shiny Application for Interactive Study Assessment
+#' Interactive screening app
 #'
-#' This file defines a Shiny application that provides a user interface for
-#' fetching study metadata, assessing study relevance using LLMs based on title/abstract
-#' and project criteria, and viewing/editing/saving assessment results to cache.
-# --- (Keep existing @import tags and function definition) ---
-#' Launch Shiny App for Interactive Study Assessment
+#' Browse studies, edit titles/abstracts, preview the exact prompt, run the
+#' LLM for one study, and record or override decisions by hand. Manual
+#' decisions are kept by later [df_assess_batch()] runs.
 #'
-#' Launches a Shiny application that provides a user interface for the study
-#' assessment phase of a systematic review or meta-analysis workflow.
-#'
-#' @details
-#' The application allows users to:
-#' \itemize{
-#'   \item Specify a `metawoRld` project path.
-#'   \item Enter a study identifier (DOI or PMID).
-#'   \item Fetch bibliographic metadata (title, abstract) for the identifier.
-#'   \item Manually input or edit the title and abstract.
-#'   \item View inclusion/exclusion criteria from the `metawoRld` project.
-#'   \item View the generated prompt for LLM-based assessment.
-#'   \item Trigger an LLM call (e.g., OpenAI, Google) to assess study relevance based on the
-#'         title/abstract and criteria.
-#'   \item View the LLM's assessment result (decision, score, rationale).
-#'   \item Manually input or edit the assessment result in JSON format.
-#'   \item Save the assessment result (from LLM or manual input) to the project's cache.
-#'   \item Load existing assessment and metadata from cache when an identifier is entered.
-#' }
-#'
-#' Prerequisites:
-#' \itemize{
-#'   \item The `shiny`, `glue`, `rlang`, `yaml`, `fs`, `jsonlite` packages must be installed.
-#'   \item `rclipboard` is suggested for the "Copy Prompt" functionality.
-#'   \item For LLM calls, the appropriate API key (e.g., `OPENAI_API_KEY` for OpenAI models,
-#'         `GOOGLE_API_KEY` for Google models) must be set as an environment variable
-#'         (e.g., in your `.Renviron` file, followed by an R session restart).
-#'         Refer to the `ellmer` package for more details on API key setup.
-#'   \item The specified `metawoRld` project path must point to a valid project
-#'         containing a `_metawoRld.yml` configuration file with defined
-#'         inclusion and exclusion criteria.
-#' }
-#'
-#' @param launch.browser Logical, passed to `shiny::runApp`. If `TRUE` (default),
-#'   the app will launch in the system's default web browser.
-#' @param ... Additional arguments passed to `shiny::runApp` (e.g., `port`, `host`).
-#'
-#' @return Does not return a value; runs the Shiny application.
+#' @param metawoRld_path Project root.
+#' @param chat Optional ellmer chat object. If `NULL`, a `"provider/model"`
+#'   string can be entered in the app.
+#' @param launch.browser Passed to [shiny::runApp()].
+#' @return Runs the app.
 #' @export
-#' @import shiny
-#' @importFrom glue glue
-#' @importFrom rlang inform warn abort is_list `%||%` check_installed is_scalar_character
-#' @importFrom yaml read_yaml
-#' @importFrom fs path_norm dir_exists file_exists path
-#' @importFrom utils packageVersion browseURL askYesNo
-#' @importFrom tools file_path_sans_ext
-#' @importFrom jsonlite fromJSON toJSON
+df_shiny_assess <- function(metawoRld_path = ".", chat = NULL, launch.browser = TRUE) {
+  rlang::check_installed("shiny", reason = "to run the screening app.")
+  proj <- .check_project(metawoRld_path)
+  schema <- metawoRld::get_schema(proj, "assessment")
+  decisions <- unlist(schema$decision$`_values`)
 
-df_shiny_assess <- function(launch.browser = TRUE, ...) {
-
-  # --- Check suggested packages ---
-  rlang::check_installed("shiny", reason = "to run the interactive assessment app.")
-  copy_available <- rlang::is_installed("rclipboard")
-
-  # --- UI Definition ---
-  ui <- fluidPage(
-    title = "DataFindR Paper Assessment",
-    if (copy_available) rclipboard::rclipboardSetup(),
-
-    sidebarLayout(
-      sidebarPanel(
+  ui <- shiny::fluidPage(
+    shiny::titlePanel("DataFindR screening"),
+    shiny::sidebarLayout(
+      shiny::sidebarPanel(
         width = 4,
-        h4("1. Project & Paper"),
-        textInput("metawoRldPath", "metawoRld Project Path:", value = ".", placeholder = "Path to project root"),
-        textInput("identifier", "DOI or PMID:", placeholder = "e.g., 10.1234/abc or 12345678"),
-        actionButton("fetchMeta", "Fetch Title/Abstract", icon = icon("cloud-download-alt")),
-        hr(),
-        h4("Optional: Manual Input/Edit"),
-        textAreaInput("manualTitle", "Title:", rows = 3),
-        textAreaInput("manualAbstract", "Abstract:", rows = 10),
-        hr(),
-        h4("2. Assess Relevance"),
-        actionButton("runAssessment", "Run LLM Assessment", icon = icon("rocket"), class = "btn-primary"),
-        p(em("Requires API key (e.g., OPENAI_API_KEY) set in .Renviron & R restart.")),
-        selectInput("llmService", "LLM Service", choices = c("openai", "google"), selected = "google"),
-        textInput("llmModel", "LLM Model", value = "gemini-2.5-flash-preview-04-17")
+        shiny::radioButtons("filter", "Show", c("Not screened" = "todo", "Needs manual review" = "manual",
+                                                "All" = "all"), inline = TRUE),
+        shiny::selectInput("id", "Study", choices = NULL),
+        shiny::fluidRow(
+          shiny::column(6, shiny::actionButton("prev", "< Previous", width = "100%")),
+          shiny::column(6, shiny::actionButton("nxt", "Next >", width = "100%"))
+        ),
+        shiny::hr(),
+        shiny::textInput("new_id", "Add DOI/PMID"),
+        shiny::actionButton("fetch", "Fetch metadata"),
+        shiny::hr(),
+        if (is.null(chat)) shiny::textInput("model", "LLM (provider/model)", "openai/gpt-4.1-mini"),
+        shiny::actionButton("run", "Run LLM assessment", class = "btn-primary"),
+        shiny::hr(),
+        shiny::h4("Decision"),
+        shiny::radioButtons("decision", NULL, decisions),
+        shiny::textAreaInput("rationale", "Rationale", rows = 3),
+        shiny::textInput("reason", "Exclusion reason"),
+        shiny::textInput("reviewer", "Reviewer", ""),
+        shiny::actionButton("save", "Save manual decision", class = "btn-success")
       ),
-
-      mainPanel(
+      shiny::mainPanel(
         width = 8,
-        h4("Fetched / Manual Paper Info:"),
-        strong("Title:"),
-        verbatimTextOutput("displayTitle", placeholder = TRUE),
-        strong("Abstract:"),
-        verbatimTextOutput("displayAbstract", placeholder = TRUE),
-        hr(),
-        h4("Generated Assessment Prompt:"),
-        uiOutput("promptSection"), # Use uiOutput for button placement
-        hr(),
-        h4("Assessment Result (Live / From Cache / Manual):"),
-        verbatimTextOutput("assessmentResult", placeholder = TRUE),
-
-        # --- NEW: Manual Assessment Input/Save ---
-        hr(),
-        h4("Manual Assessment JSON Input/Edit:"),
-        textAreaInput("manualAssessmentJson", label=NULL, rows = 10, width="100%",
-                      placeholder = 'Paste or edit assessment JSON here, e.g.,\n{\n  "decision": "Include",\n  "score": 0.9,\n  "rationale": "Manual assessment based on full text."\n}'),
-        actionButton("saveManualAssessment", "Save Manual Assessment to Cache", icon = icon("save"), class = "btn-warning")
-        # --- End NEW Section ---
+        shiny::textAreaInput("title", "Title", rows = 2, width = "100%"),
+        shiny::textAreaInput("abstract", "Abstract", rows = 12, width = "100%"),
+        shiny::actionButton("save_meta", "Save title/abstract edits"),
+        shiny::hr(),
+        shiny::h4("Current assessment"),
+        shiny::verbatimTextOutput("assessment"),
+        shiny::h4("Prompt sent to the LLM"),
+        shiny::verbatimTextOutput("prompt")
       )
     )
   )
 
-  # --- Server Logic ---
   server <- function(input, output, session) {
+    refresh <- shiny::reactiveVal(0)
 
-    # --- Reactive Values ---
-    rv <- reactiveValues(
-      metadata = NULL,
-      assessment = NULL,    # Holds the *currently displayed* assessment (from API or cache or manual save)
-      project_valid = FALSE,
-      criteria = NULL
-    )
+    ids <- shiny::reactive({
+      refresh()
+      st <- df_status(proj)
+      st <- st[st$has_metadata, ]
+      keep <- switch(input$filter,
+                     todo = is.na(st$decision),
+                     manual = st$decision %in% "Needs manual review",
+                     rep(TRUE, nrow(st)))
+      st <- st[keep, ]
+      rlang::set_names(st$identifier, paste0(st$identifier, " - ", substr(st$title, 1, 60)))
+    })
+    shiny::observe({
+      choices <- ids()
+      sel <- shiny::isolate(input$id)
+      shiny::updateSelectInput(session, "id", choices = choices,
+                               selected = if (!is.null(sel) && sel %in% choices) sel else choices[1])
+    })
+    step <- function(d) {
+      ch <- unname(ids())
+      i <- match(input$id, ch)
+      if (!length(ch) || is.na(i)) return()
+      shiny::updateSelectInput(session, "id", selected = ch[max(1, min(length(ch), i + d))])
+    }
+    shiny::observeEvent(input$prev, step(-1))
+    shiny::observeEvent(input$nxt, step(1))
 
-    # --- (Keep existing Project Validation observe block) ---
-    observe({
-      req(input$metawoRldPath)
-      proj_path <- fs::path_norm(input$metawoRldPath)
-      config_path <- fs::path(proj_path, "_metawoRld.yml")
-
-      if (fs::dir_exists(proj_path) && fs::file_exists(config_path)) {
-        tryCatch({
-          project_config <- yaml::read_yaml(config_path)
-          incl_crit <- project_config$inclusion_criteria %||% character(0)
-          excl_crit <- project_config$exclusion_criteria %||% character(0)
-
-          if (length(incl_crit) == 0 && length(excl_crit) == 0) {
-            showNotification("Project config found, but no inclusion/exclusion criteria defined.", type = "warning", duration=10, id="proj_warn")
-            rv$project_valid <- FALSE
-            rv$criteria <- NULL
-          } else {
-            removeNotification("proj_warn") # Remove warning if criteria found later
-            showNotification("metawoRld project and criteria loaded.", type = "message", duration=5, id="proj_msg")
-            rv$project_valid <- TRUE
-            rv$criteria <- list(inclusion = incl_crit, exclusion = excl_crit)
-          }
-        }, error = function(e) {
-          showNotification(paste("Error reading project config:", e$message), type = "error", duration=10)
-          rv$project_valid <- FALSE
-          rv$criteria <- NULL
-        })
-      } else {
-        removeNotification("proj_msg")
-        removeNotification("proj_warn")
-        rv$project_valid <- FALSE
-        rv$criteria <- NULL
-      }
+    current <- shiny::reactive({
+      shiny::req(input$id)
+      refresh()
+      list(meta = .cache_read(input$id, "metadata", proj),
+           assessment = .cache_get_entry(input$id, "assessment", proj))
+    })
+    shiny::observeEvent(current(), {
+      m <- current()$meta
+      shiny::updateTextAreaInput(session, "title", value = .or_na(m$title, ""))
+      shiny::updateTextAreaInput(session, "abstract", value = .or_na(m$abstract, ""))
+      a <- current()$assessment$result
+      if (!is.null(a$decision)) shiny::updateRadioButtons(session, "decision", selected = a$decision)
+      shiny::updateTextAreaInput(session, "rationale", value = a$rationale %||% "")
+      shiny::updateTextInput(session, "reason", value = a$exclusion_reason %||% "")
     })
 
-    # --- Check Cache on Identifier Change ---
-    # NEW: Automatically check cache when identifier changes and populate fields
-    observe({
-      req(input$identifier)
-      req(input$metawoRldPath)
-      req(rv$project_valid) # Only check if project is valid
-
-      # Check assessment cache first
-      cached_assessment <- .check_cache(input$identifier, type = "assessment", metawoRld_path = input$metawoRldPath)
-      if(!is.null(cached_assessment) && is.list(cached_assessment)) {
-        # Basic validation
-        if(all(c("decision", "score", "rationale") %in% names(cached_assessment))) {
-          rv$assessment <- cached_assessment
-          showNotification("Loaded assessment from cache.", type = "message", duration = 5)
-        } else {
-          rv$assessment <- NULL # Clear if invalid structure
-        }
-      } else {
-        rv$assessment <- NULL # Clear if not found
-      }
-
-      # Check metadata cache (or clear if assessment was found, maybe not necessary)
-      cached_metadata <- .check_cache(input$identifier, type = "metadata", metawoRld_path = input$metawoRldPath)
-      if(!is.null(cached_metadata) && is.list(cached_metadata)) {
-        if(!is.null(cached_metadata$title) && !is.null(cached_metadata$abstract)){
-          rv$metadata <- cached_metadata
-          # Only update text areas if they are currently empty or match previous fetched
-          current_title <- trimws(input$manualTitle)
-          current_abstract <- trimws(input$manualAbstract)
-          if (current_title == "" || (!is.null(rv$metadata$title) && current_title == rv$metadata$title)) {
-            updateTextAreaInput(session, "manualTitle", value = cached_metadata$title %||% "")
-          }
-          if (current_abstract == "" || (!is.null(rv$metadata$abstract) && current_abstract == rv$metadata$abstract)) {
-            updateTextAreaInput(session, "manualAbstract", value = cached_metadata$abstract %||% "")
-          }
-          showNotification("Loaded metadata from cache.", type = "message", duration = 5)
-        } else {
-          rv$metadata <- NULL
-        }
-      } else {
-        rv$metadata <- NULL
-      }
-
+    edited_meta <- shiny::reactive({
+      m <- current()$meta %||% list()
+      m$title <- input$title
+      m$abstract <- input$abstract
+      m
+    })
+    output$prompt <- shiny::renderText(df_assessment_prompt(edited_meta(), proj))
+    output$assessment <- shiny::renderText({
+      a <- current()$assessment
+      if (is.null(a)) return("Not assessed yet.")
+      jsonlite::toJSON(a, auto_unbox = TRUE, pretty = TRUE, null = "null")
     })
 
+    save_meta_if_edited <- function() {
+      m <- current()$meta
+      if (!identical(m$title, input$title) || !identical(m$abstract, input$abstract)) {
+        e <- edited_meta()
+        e$source <- "manual edit"
+        df_add_metadata(input$id, e, proj)
+      }
+    }
+    shiny::observeEvent(input$save_meta, {
+      save_meta_if_edited()
+      refresh(refresh() + 1)
+      shiny::showNotification("Metadata saved.")
+    })
 
-    # --- (Keep existing Fetch Metadata observeEvent block) ---
-    observeEvent(input$fetchMeta, {
-      req(input$identifier)
-      req(input$metawoRldPath)
-      # Use a fixed email or prompt user? For simplicity, use NULL initially.
-      email_addr <- NULL # Or Sys.getenv("MY_EMAIL") etc.
+    shiny::observeEvent(input$fetch, {
+      shiny::req(nzchar(input$new_id))
+      id <- metawoRld::normalize_identifier(input$new_id)
+      m <- tryCatch(.get_metadata(id, proj, force = TRUE), error = function(e) e)
+      if (inherits(m, "error") || is.null(m[[id]])) {
+        shiny::showNotification("No metadata found. You can paste title and abstract and save them.", type = "warning")
+        df_add_metadata(id, list(title = "", abstract = ""), proj)
+      }
+      shiny::updateRadioButtons(session, "filter", selected = "all")
+      refresh(refresh() + 1)
+      shiny::updateSelectInput(session, "id", selected = id)
+    })
 
-      # Clear previous results except identifier/path
-      rv$metadata <- NULL
-      rv$assessment <- NULL
-      # Don't clear manual fields automatically on fetch? Or maybe we should? Let's clear them.
-      updateTextAreaInput(session, "manualTitle", value = "")
-      updateTextAreaInput(session, "manualAbstract", value = "")
-      updateTextAreaInput(session, "manualAssessmentJson", value="")
-
-
-      showNotification(paste("Fetching metadata for:", input$identifier), id = "fetchNotify", duration = NULL)
-      tryCatch({
-        # Fetch regardless of cache (user clicked fetch)
-        meta <- df_fetch_metadata(input$identifier, email = email_addr)
-        if (!is.null(meta)) {
-          rv$metadata <- meta
-          updateTextAreaInput(session, "manualTitle", value = meta$title %||% "")
-          updateTextAreaInput(session, "manualAbstract", value = meta$abstract %||% "")
-          # Save fetched metadata to cache
-          .save_to_cache(identifier = input$identifier, data = meta, type = "metadata", metawoRld_path = input$metawoRldPath)
-          showNotification("Metadata fetched and cached successfully.", type = "message", duration = 5)
-        } else {
-          showNotification(paste("Could not fetch metadata for:", input$identifier), type = "warning", duration = 10)
-        }
-      }, error = function(e) {
-        showNotification(paste("Metadata fetch failed:", e$message), type = "error", duration = 10)
-      }, finally = {
-        removeNotification("fetchNotify")
+    shiny::observeEvent(input$run, {
+      shiny::req(input$id)
+      save_meta_if_edited()
+      the_chat <- chat %||% input$model
+      shiny::withProgress(message = "Asking the LLM...", {
+        res <- tryCatch(df_assess_batch(the_chat, input$id, proj, mode = "sequential", force = TRUE),
+                        error = function(e) e)
       })
-    })
-
-    # --- (Keep existing Gather Title/Abstract reactives) ---
-    gathered_title <- reactive({
-      manual <- input$manualTitle
-      fetched <- rv$metadata$title %||% ""
-      if (!is.null(manual) && nzchar(trimws(manual))) {
-        return(trimws(manual))
-      } else {
-        return(fetched)
+      if (inherits(res, "error")) {
+        shiny::showNotification(conditionMessage(res), type = "error", duration = NULL)
+      } else if (res$status[1] == "failed") {
+        shiny::showNotification(res$error[1], type = "error", duration = NULL)
       }
+      refresh(refresh() + 1)
     })
 
-    gathered_abstract <- reactive({
-      manual <- input$manualAbstract
-      fetched <- rv$metadata$abstract %||% ""
-      if (!is.null(manual) && nzchar(trimws(manual))) {
-        return(trimws(manual))
-      } else {
-        return(fetched)
-      }
+    shiny::observeEvent(input$save, {
+      shiny::req(input$id)
+      df_save_assessment(input$id, input$decision, input$rationale,
+                         exclusion_reason = if (nzchar(input$reason)) input$reason else NULL,
+                         metawoRld_path = proj,
+                         reviewer = if (nzchar(input$reviewer)) input$reviewer else NULL)
+      shiny::showNotification("Decision saved.")
+      refresh(refresh() + 1)
     })
+  }
 
-    # --- (Keep existing Display Fetched/Manual Info outputs) ---
-    output$displayTitle <- renderText({ gathered_title() %||% "N/A" })
-    output$displayAbstract <- renderText({ gathered_abstract() %||% "N/A" })
-
-
-    # --- (Keep existing Generate Assessment Prompt reactive) ---
-    assessment_prompt_reactive <- reactive({
-      req(rv$project_valid, rv$criteria)
-      req(gathered_title(), gathered_abstract())
-      .generate_assessment_prompt(
-        title = gathered_title(),
-        abstract = gathered_abstract(),
-        inclusion_criteria = rv$criteria$inclusion,
-        exclusion_criteria = rv$criteria$exclusion
-      )
-    })
-
-    # --- (Keep existing Display Prompt and Copy Button output) ---
-    output$promptSection <- renderUI({
-      prompt_text <- assessment_prompt_reactive()
-      req(prompt_text)
-      elements <- list(
-        tags$textarea(id = "promptDisplay", readonly = "readonly", rows = 15, style = "width:100%; font-family: monospace;", prompt_text)
-      )
-      if (copy_available) {
-        elements <- append(elements, list(
-          rclipboard::rclipButton(
-            "copyBtn", "Copy Prompt", clipText = prompt_text,
-            icon = icon("copy"), class="btn-sm btn-outline-secondary" ) ))
-      } else {
-        elements <- append(elements, list(p(em("Install 'rclipboard' package to enable copy button."))))
-      }
-      return(tagList(elements))
-    })
-
-    # --- (Keep existing Run Assessment observeEvent block) ---
-    # Modify slightly to update the manual JSON field after running
-    observeEvent(input$runAssessment, {
-      req(input$identifier)
-      req(input$metawoRldPath)
-      req(rv$project_valid)
-
-      rv$assessment <- NULL # Clear previous result before running
-      updateTextAreaInput(session, "manualAssessmentJson", value="") # Clear manual json too
-
-      withProgress(message = 'Running LLM Assessment...', value = 0, {
-        tryCatch({
-          incProgress(0.5)
-          assessment_res <- df_assess_relevance(
-            identifier = input$identifier,
-            metawoRld_path = input$metawoRldPath,
-            service = input$llmService,
-            model = input$llmModel,
-            email = NULL
-          )
-          rv$assessment <- assessment_res # Update reactive value
-
-          incProgress(1)
-          showNotification("Assessment complete.", type = "message", duration = 5)
-        }, error = function(e) {
-          incProgress(1)
-          showNotification(paste("Assessment Failed:", e$message), type = "error", duration = NULL)
-        })
-      })
-    })
-
-    # --- Display Assessment Result ---
-    # (Keep existing renderText block, it displays rv$assessment)
-    output$assessmentResult <- renderText({
-      res <- rv$assessment
-      if (is.null(res)) {
-        return("Assessment not yet run or loaded from cache.")
-      } else {
-        # Format for display
-        json_display <- tryCatch({
-          jsonlite::toJSON(res, auto_unbox = TRUE, pretty = TRUE)
-        }, error = function(e) {"Error formatting result for display"})
-        return(json_display)
-        # Or use the nicer formatting from before:
-        # paste(...)
-      }
-    })
-
-    # --- NEW: Update Manual JSON field when rv$assessment changes ---
-    observe({
-      res <- rv$assessment
-      if(is.null(res)){
-        # Optionally clear manual field if assessment becomes null? Depends on desired UX.
-        # updateTextAreaInput(session, "manualAssessmentJson", value="")
-      } else {
-        json_to_display <- tryCatch({
-          # Remove any extra fields added internally before display/edit
-          res_to_edit <- res[c("decision", "score", "rationale")]
-          jsonlite::toJSON(res_to_edit, auto_unbox = TRUE, pretty = TRUE)
-        }, error = function(e) {"Error formatting result for editing"})
-        updateTextAreaInput(session, "manualAssessmentJson", value = json_to_display)
-      }
-    })
-
-
-    # --- NEW: Save Manual Assessment ---
-    observeEvent(input$saveManualAssessment, {
-      req(input$identifier)
-      req(input$metawoRldPath)
-      req(input$manualAssessmentJson)
-
-      json_string <- input$manualAssessmentJson
-      identifier <- input$identifier
-      proj_path <- input$metawoRldPath
-
-      if (!nzchar(trimws(json_string))) {
-        showNotification("Manual Assessment JSON input is empty.", type = "warning", duration = 5)
-        return()
-      }
-
-      # Validate JSON structure
-      parsed_json <- NULL
-      validation_passed <- FALSE
-      tryCatch({
-        parsed_json <- jsonlite::fromJSON(json_string, simplifyVector = FALSE)
-        required_fields <- c("decision", "score", "rationale")
-        if (is.list(parsed_json) && all(required_fields %in% names(parsed_json))) {
-          validation_passed <- TRUE
-        } else {
-          showNotification("Manual JSON is missing required fields: 'decision', 'score', 'rationale'.", type = "error", duration = 10)
-        }
-      }, error = function(e) {
-        showNotification(paste("Invalid JSON format:", e$message), type = "error", duration = 10)
-      })
-
-      if (validation_passed) {
-        # Add timestamp/model info? Maybe indicate it was manual?
-        parsed_json$assessment_timestamp <- Sys.time()
-        parsed_json$assessment_model <- "manual"
-        parsed_json$assessment_service <- "manual"
-
-        # Save to cache (this will overwrite existing cache file)
-        save_path <- .save_to_cache(
-          identifier = identifier,
-          data = parsed_json,
-          type = "assessment",
-          metawoRld_path = proj_path
-        )
-
-        if (!is.null(save_path)) {
-          showNotification("Manual assessment saved to cache successfully.", type = "message", duration = 5)
-          # Update the main reactive value to reflect the saved manual assessment
-          rv$assessment <- parsed_json
-        } else {
-          showNotification("Failed to save manual assessment to cache.", type = "error", duration = 10)
-        }
-      }
-    })
-
-
-  } # end server
-
-  # --- Run the App ---
-  shinyApp(ui = ui, server = server, options = list(launch.browser = launch.browser, ...))
+  shiny::runApp(shiny::shinyApp(ui, server), launch.browser = launch.browser)
 }

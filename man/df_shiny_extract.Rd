@@ -2,32 +2,31 @@
 % Please edit documentation in R/shiny_extract.R
 \name{df_shiny_extract}
 \alias{df_shiny_extract}
-\title{Launch Shiny App for Extracting Study Data}
+\title{Interactive extraction app}
 \usage{
-df_shiny_extract(launch.browser = TRUE, ...)
+df_shiny_extract(
+  metawoRld_path = ".",
+  chat = NULL,
+  fulltext_dir = NULL,
+  launch.browser = TRUE
+)
 }
 \arguments{
-\item{launch.browser}{Logical, passed to \code{shiny::runApp}. Whether to launch
-the app in the default browser.}
+\item{metawoRld_path}{Project root.}
 
-\item{...}{Additional arguments passed to \code{shiny::runApp} (e.g., \code{port}, \code{host}).}
+\item{chat}{Optional ellmer chat object. If \code{NULL}, a \code{"provider/model"}
+string can be entered in the app.}
+
+\item{fulltext_dir}{Optional folder with full texts named after the
+identifiers (see \code{\link[=df_find_fulltexts]{df_find_fulltexts()}}).}
+
+\item{launch.browser}{Passed to \code{\link[shiny:runApp]{shiny::runApp()}}.}
 }
 \value{
-Does not return a value; runs the Shiny application.
+Runs the app.
 }
 \description{
-Launches a Shiny application to manage the data extraction phase. It helps
-identify studies pending extraction, generate prompts, optionally run LLM
-extraction, allow manual JSON input/editing, and save results to the cache.
-}
-\details{
-Before running the app:
-\itemize{
-\item Ensure \code{metawoRld} and \code{DataFindR} packages are installed and accessible.
-\item Ensure the target \code{metawoRld} project directory exists and contains a valid \verb{_metawoRld.yml}.
-\item Ensure assessment results exist in the project's cache (\verb{.metawoRld_cache/datafindr/assessment/}).
-\item If triggering API calls, ensure the relevant API key (e.g., \code{OPENAI_API_KEY}) is set in your environment.
-\item For LLM extraction, you currently need to provide a path to a \strong{plain text file} containing the full paper content. PDF processing within the app is not yet implemented.
-\item The \code{rclipboard} package is needed for the 'Copy Prompt' button.
-}
+Pick an included study, run the LLM on its full text, review and correct
+the extracted JSON with live schema validation, save it, and import it into
+the metawoRld project.
 }

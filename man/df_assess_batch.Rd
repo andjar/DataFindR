@@ -2,98 +2,82 @@
 % Please edit documentation in R/assessment.R
 \name{df_assess_batch}
 \alias{df_assess_batch}
-\title{Assess Relevance for a Batch of Study Identifiers}
+\alias{df_assess_relevance}
+\title{Screen studies by title and abstract with an LLM}
 \usage{
 df_assess_batch(
   chat,
   identifiers,
-  metawoRld_path,
+  metawoRld_path = ".",
+  mode = c("parallel", "sequential", "batch"),
+  force = FALSE,
   force_fetch = FALSE,
-  force_assess = FALSE,
-  email = NULL,
-  ncbi_api_key = NULL,
-  stop_on_error = FALSE,
-  ...
+  max_active = 10,
+  batch_file = NULL,
+  wait = TRUE,
+  email = Sys.getenv("DATAFINDR_EMAIL"),
+  api_key = Sys.getenv("NCBI_API_KEY")
 )
+
+df_assess_relevance(chat, identifier, metawoRld_path = ".", ...)
 }
 \arguments{
-\item{identifiers}{Character vector. A vector of DOIs and/or PMIDs.}
+\item{chat}{An ellmer chat object, e.g. \code{ellmer::chat_openai(model = "gpt-4.1-mini")}, or a \code{"provider/model"} string for \code{\link[ellmer:chat]{ellmer::chat()}}.}
 
-\item{metawoRld_path}{Character string. Path to the root of the metawoRld project.}
+\item{identifiers}{Character vector of DOIs/PMIDs.}
 
-\item{force_fetch}{Logical. If TRUE, bypass the metadata cache for all identifiers.}
+\item{metawoRld_path}{Project root.}
 
-\item{force_assess}{Logical. If TRUE, bypass the assessment cache for all identifiers.}
+\item{mode}{\code{"parallel"} (default; many requests at once),
+\code{"sequential"} (one by one), or \code{"batch"} (the provider's batch API:
+about half the price, but results can take up to 24 hours; supported by
+OpenAI, Anthropic and Google Gemini).}
 
-\item{email}{Character string (optional). Email for NCBI Entrez.}
+\item{force}{Re-assess even if a current cached result exists.}
 
-\item{ncbi_api_key}{Character string (optional). NCBI API key.}
+\item{force_fetch}{Re-fetch metadata even if cached.}
 
-\item{stop_on_error}{Logical. If TRUE, the batch process stops if any single
-assessment fails. If FALSE (default), it attempts to process all identifiers
-and reports errors in the summary.}
+\item{max_active}{Maximum simultaneous requests in parallel mode.}
 
-\item{...}{Additional arguments passed down to \code{df_assess_relevance} and
-subsequently to the LLM API call function (e.g., \code{temperature}).}
+\item{batch_file}{File used to track a batch job (mode \code{"batch"}).
+Re-run the same call to resume. Defaults to a file in the cache folder.}
 
-\item{service}{Character string. The LLM service to use (e.g., "openai").}
+\item{wait}{In batch mode, wait for the results? If \code{FALSE} and the batch
+is not finished, the function returns early; call it again later.}
 
-\item{model}{Character string. The specific LLM model name.}
+\item{email, api_key}{Passed to \code{\link[=df_fetch_metadata]{df_fetch_metadata()}}.}
+
+\item{identifier}{A single DOI/PMID.}
+
+\item{...}{Further arguments passed to \code{df_assess_batch()}.}
 }
 \value{
-A data frame (tibble) summarizing the assessment results for each
-identifier, with columns:
-\describe{
-\item{\code{identifier}}{The DOI or PMID.}
-\item{\code{status}}{"Success" or "Failure".}
-\item{\code{decision}}{Assessment decision ("Include", "Exclude", etc.) if status is "Success".}
-\item{\code{score}}{Confidence score if status is "Success".}
-\item{\code{rationale}}{LLM rationale if status is "Success".}
-\item{\code{error_message}}{The error message if status is "Failure".}
-}
-Also prints progress and summary information to the console. Assessment
-results are saved to the cache within the \code{metawoRld} project.
+A tibble with one row per identifier: \code{identifier}, \code{status}
+(\code{"assessed"}, \code{"cached"}, \code{"failed"} or \code{"pending"}), \code{decision},
+\code{score}, \code{rationale}, \code{exclusion_reason}, \code{error}, \code{input_tokens},
+\code{output_tokens} and \code{cost}.
+
+\code{df_assess_relevance()}: the assessment as a list (\code{decision},
+\code{score}, \code{rationale}, ...), or an error.
 }
 \description{
-Runs the relevance assessment workflow (\code{df_assess_relevance}) for multiple
-DOIs/PMIDs, leveraging caching and providing a summary of results.
+For each identifier: gets metadata (from the cache, or fetched and cached),
+fills the project's assessment prompt, asks the LLM for a structured
+decision following \verb{_assessment_schema.yml}, validates it, and caches the
+result together with its provenance (model, token use, cost and a
+fingerprint of the prompt, schema and criteria).
+}
+\details{
+Cached results are reused unless they were produced with a different
+prompt, schema, criteria or model (then they are redone), or
+\code{force = TRUE}. Manual decisions (e.g. saved from \code{\link[=df_shiny_assess]{df_shiny_assess()}}) are
+never overwritten unless \code{force = TRUE}.
 }
 \examples{
 \dontrun{
-# --- Prerequisites ---
-# 1. Set API key: usethis::edit_r_environ("project") -> add OPENAI_API_KEY=sk-... -> Restart R
-# 2. Create a dummy metawoRld project
-proj_path <- file.path(tempdir(), "assess_batch_proj")
-metawoRld::create_metawoRld(
-   proj_path,
-   project_name = "Test Batch Assessment",
-   project_description = "Testing DataFindR batch assessment",
-   inclusion_criteria = c("Human study", "Pregnancy", "Serum or Plasma", "Cytokine measurement"),
-   exclusion_criteria = c("Animal study", "Review article", "Non-English")
-)
-
-# --- Identifiers from a hypothetical search ---
-ids_to_assess <- c(
-  "31772108", # Should likely be Include
-  "25376210", # Should likely be Include
-  "invalid_pmid", # Should fail fetch
-  "10.1038/nature14539" # Example DOI (Nature review, likely Exclude)
-)
-
-# --- Run Batch Assessment ---
-batch_results <- df_assess_batch(
-  identifiers = ids_to_assess,
-  metawoRld_path = proj_path,
-  email = "your.email@example.com", # Replace with your email
-  service = "openai",
-  model = "gpt-3.5-turbo",
-  stop_on_error = FALSE # Continue processing even if one fails
-)
-
-# --- View Results ---
-print(batch_results)
-
-# --- Clean up ---
-unlink(proj_path, recursive = TRUE)
+chat <- ellmer::chat_openai(model = "gpt-4.1-mini")
+hits <- df_search_pubmed("biomarker X AND pregnancy", "my_review")
+res <- df_assess_batch(chat, hits$identifier, "my_review")
+table(res$decision)
 }
 }

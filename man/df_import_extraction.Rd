@@ -2,41 +2,32 @@
 % Please edit documentation in R/importing.R
 \name{df_import_extraction}
 \alias{df_import_extraction}
-\title{Import Extracted Study Data into a metawoRld Project}
+\title{Import a cached extraction into the metawoRld project}
 \usage{
 df_import_extraction(
   identifier,
-  metawoRld_path,
+  metawoRld_path = ".",
   overwrite = FALSE,
-  validate_json = TRUE,
   merge_metadata = TRUE
 )
 }
 \arguments{
-\item{identifier}{Character string. The DOI or PMID of the study to import.}
+\item{identifier}{Study identifier.}
 
-\item{metawoRld_path}{Character string. Path to the root of the target
-metawoRld project.}
+\item{metawoRld_path}{Project root.}
 
-\item{overwrite}{Logical. Passed to \code{metawoRld::add_study_data}. If a directory
-for the study already exists in \verb{metawoRld/data/}, should its contents be
-overwritten? Defaults to \code{FALSE}.}
+\item{overwrite}{Replace the study if it was imported before?}
 
-\item{validate_json}{Logical. Should the extracted JSON content be validated
-against the project schema and internal links before importing? Defaults to \code{TRUE}.}
-
-\item{merge_metadata}{Logical. Should cached metadata (Title, Authors, Year,
-Journal, DOI, Abstract fetched via \code{df_fetch_metadata}) be merged into the
-metadata section from the extraction, prioritizing the fetched values for
-these specific fields? Defaults to \code{TRUE}.}
+\item{merge_metadata}{Use fetched title, authors, year, journal, DOI, PMID
+and abstract when available? Defaults to \code{TRUE}.}
 }
 \value{
-Invisibly returns the path to the study directory within the
-\code{metawoRld} project if successful, otherwise aborts with an error.
+The study folder, invisibly.
 }
 \description{
-Reads cached extraction JSON data for a study, validates it against the
-project schema, optionally merges with cached metadata, transforms it,
-and imports it into the metawoRld project structure using
-\code{metawoRld::add_study_data}.
+Takes the cached extraction, optionally replaces bibliographic fields with
+the fetched metadata (which is usually more reliable than the LLM's
+reading), and stores the study with \code{\link[metawoRld:add_study_data]{metawoRld::add_study_data()}}, which
+validates it against the schema. The study is stored under its DOI/PMID,
+so cache and project stay linked.
 }
