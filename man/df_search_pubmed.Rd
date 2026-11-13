@@ -2,7 +2,7 @@
 % Please edit documentation in R/fetching.R
 \name{df_search_pubmed}
 \alias{df_search_pubmed}
-\title{Search PubMed and cache the results}
+\title{Search PubMed, log the search and register the records}
 \usage{
 df_search_pubmed(
   query,
@@ -10,6 +10,8 @@ df_search_pubmed(
   max_results = 10000,
   mindate = NULL,
   maxdate = NULL,
+  person = NULL,
+  search_id = NULL,
   email = Sys.getenv("DATAFINDR_EMAIL"),
   api_key = Sys.getenv("NCBI_API_KEY")
 )
@@ -24,6 +26,12 @@ df_search_pubmed(
 \item{mindate, maxdate}{Optional publication date limits (\code{"YYYY/MM/DD"},
 \code{"YYYY/MM"} or \code{"YYYY"}).}
 
+\item{person}{Id (from \code{people.yml}) of the person running the search.
+Defaults to the \code{metawoRld.person} option, else DataFindR itself.}
+
+\item{search_id}{Id for the search log. Defaults to
+\verb{pubmed-<date>-<time>}.}
+
 \item{email}{Contact e-mail sent to NCBI and Crossref (recommended; NCBI
 may block anonymous heavy use). Defaults to the \code{DATAFINDR_EMAIL}
 environment variable.}
@@ -32,12 +40,14 @@ environment variable.}
 Defaults to the \code{NCBI_API_KEY} environment variable.}
 }
 \value{
-A tibble with \code{identifier} (PMID), \code{title}, \code{year} and \code{new}
-(\code{TRUE} if the record was not in the cache before).
+A tibble with \code{identifier} (PMID), \code{record_id}, \code{title}, \code{year}
+and \code{new} (\code{TRUE} if the record was not in the registry before).
 }
 \description{
 Runs a PubMed query, fetches metadata for every hit and stores it in the
-project's metadata cache, ready for \code{\link[=df_assess_batch]{df_assess_batch()}}. Records that are
-already cached are not fetched again, which makes repeated searches cheap
-in a living review.
+metadata cache, ready for \code{\link[=df_assess_batch]{df_assess_batch()}}. The search is logged in the
+project's \code{searches.yml} (\code{\link[metawoRld:add_search]{metawoRld::add_search()}}) and every hit is
+added to \code{records.csv} (\code{\link[metawoRld:read_records]{metawoRld::add_records()}}), so PRISMA counts
+include it. Records that are already cached are not fetched again, which
+makes repeated searches cheap in a living review.
 }

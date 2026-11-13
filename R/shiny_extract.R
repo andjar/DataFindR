@@ -24,7 +24,7 @@ df_shiny_extract <- function(metawoRld_path = ".", chat = NULL, fulltext_dir = N
       shiny::sidebarPanel(
         width = 4,
         shiny::radioButtons("filter", "Show", c("Waiting for extraction" = "todo",
-                                                "Extracted, not imported" = "review",
+                                                "Extracted, not submitted" = "review",
                                                 "All included" = "all")),
         shiny::selectInput("id", "Study", choices = NULL),
         shiny::textInput("file", "Full text (pdf, txt, html, xml)"),
@@ -32,7 +32,7 @@ df_shiny_extract <- function(metawoRld_path = ".", chat = NULL, fulltext_dir = N
         shiny::actionButton("run", "Run LLM extraction", class = "btn-primary"),
         shiny::hr(),
         shiny::actionButton("save", "Save JSON", class = "btn-success"),
-        shiny::actionButton("import", "Import into project", class = "btn-warning")
+        shiny::actionButton("import", "Submit to project", class = "btn-warning")
       ),
       shiny::mainPanel(
         width = 8,
@@ -52,7 +52,7 @@ df_shiny_extract <- function(metawoRld_path = ".", chat = NULL, fulltext_dir = N
       inc <- st$decision %in% "Include" | st$extracted
       keep <- switch(input$filter,
                      todo = inc & !st$extracted,
-                     review = st$extracted & !st$imported,
+                     review = st$extracted & !st$submitted,
                      inc)
       st$identifier[keep]
     })
@@ -102,12 +102,12 @@ df_shiny_extract <- function(metawoRld_path = ".", chat = NULL, fulltext_dir = N
       refresh(refresh() + 1)
     })
     shiny::observeEvent(input$import, {
-      r <- tryCatch(df_import_extraction(input$id, proj, overwrite = TRUE), error = function(e) e)
+      r <- tryCatch(suppressMessages(df_import_extraction(input$id, proj, resubmit = TRUE)), error = function(e) e)
       if (inherits(r, "error")) {
         msg <- if (!is.null(r$validation_errors)) paste(utils::head(r$validation_errors, 5), collapse = "\n") else conditionMessage(r)
-        shiny::showNotification(paste("Import failed:", msg), type = "error", duration = NULL)
+        shiny::showNotification(paste("Submission refused:", msg), type = "error", duration = NULL)
       } else {
-        shiny::showNotification("Imported.")
+        shiny::showNotification(paste0("Submitted as ", r$study_id, " (", r$extraction_id, ")."))
       }
       refresh(refresh() + 1)
     })

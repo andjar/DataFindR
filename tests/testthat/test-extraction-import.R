@@ -1,4 +1,4 @@
-test_that("extract -> import -> metawoRld, with merged metadata and status/PRISMA", {
+test_that("search -> screen -> extract -> submit -> accept, with registry, provenance and PRISMA", {
   local_mocked_bindings(.http_get = fake_http)
   p <- local_project()
   suppressMessages(df_search_pubmed("q", p, email = "", api_key = ""))
@@ -16,19 +16,42 @@ test_that("extract -> import -> metawoRld, with merged metadata and status/PRISM
   expect_match(sent[[1]], "Full text of the study")
   expect_match(sent[[2]], "title: Biomarker X in pregnant women")
 
+  # the search and screening are logged in the project
+  s <- yaml::read_yaml(file.path(p, "searches.yml"))$searches
+  expect_equal(s[[1]]$results, 2L)
+  expect_equal(nrow(metawoRld::read_records(p)), 2)
+  scr <- read.csv(file.path(p, "screening.csv"), colClasses = "character")
+  expect_equal(unique(scr$person), "datafindr")
+  expect_equal(sort(scr$decision), c("exclude", "include"))
+
   imp <- suppressMessages(df_import_batch(metawoRld_path = p))
-  expect_equal(imp$status, "imported")
+  expect_equal(imp$status, "submitted")
+  expect_true(metawoRld::is_study_id(imp$study_id))
+  expect_equal(metawoRld::list_studies(p), character(0))              # waits for a person
+  sub <- metawoRld::read_submission(p, imp$study_id, imp$extraction_id)$submission
+  expect_equal(sub$person, "datafindr")
+  expect_equal(sub$channel, "datafindr")
+  expect_match(sub$model, "mock-model")
+  expect_match(sub$source_sha256, "^sha256:")
+  expect_match(sub$tool, "^DataFindR@")
+  expect_equal(suppressMessages(df_import_batch(metawoRld_path = p))$identifier, character(0))  # nothing new
+
+  suppressMessages(metawoRld::accept_submission(p, imp$study_id, imp$extraction_id, person = "ahj"))
   w <- suppressMessages(metawoRld::load_metawoRld(p))
-  expect_equal(names(w$studies_metadata), "11111111")                 # stored under the PMID
   expect_equal(w$studies_metadata[[1]]$title, "Biomarker X in pregnant women: a cohort study.")  # fetched title wins
   expect_equal(w$studies_data$group_name, c("Cases", "Controls"))
+  rec <- metawoRld::read_records(p)
+  expect_equal(rec$study_id[rec$pmid == "11111111"], imp$study_id)   # record linked on acceptance
 
   st <- df_status(p)
-  expect_true(st$imported[st$identifier == "11111111"])
-  pc <- df_prisma_counts(p)
-  expect_equal(pc$n[pc$stage == "Records screened"], 2)
-  expect_equal(pc$n[pc$stage == "  Excluded: Animal study"], 1)
-  expect_equal(pc$n[pc$stage == "Included in review"], 1)
+  expect_true(st$submitted[st$identifier == "11111111"])
+  expect_true(st$accepted[st$identifier == "11111111"])
+  expect_equal(st$study_id[st$identifier == "11111111"], imp$study_id)
+  pc <- metawoRld::prisma_counts(p)
+  expect_equal(pc$n[pc$stage == "Records screened (title/abstract)"], 2)
+  expect_equal(pc$n[pc$stage == "Records excluded (title/abstract)"], 1)
+  expect_equal(pc$n[pc$stage == "Studies included"], 1)
+  expect_equal(nrow(suppressMessages(metawoRld::check_project(p))), 0)
 })
 
 test_that("invalid extractions are flagged, saved, and fail import with clear messages", {
@@ -39,6 +62,7 @@ test_that("invalid extractions are flagged, saved, and fail import with clear me
   expect_equal(res$n_problems, 2L)
   imp <- suppressMessages(df_import_batch("10.1/x", p))
   expect_equal(imp$status, "failed")
+  expect_equal(nrow(metawoRld::list_submissions(p)), 0)                 # refused at the gate
   expect_match(imp$error, "'g9' not defined")
   expect_match(imp$error, "'sd' is not one of")
 
@@ -46,7 +70,7 @@ test_that("invalid extractions are flagged, saved, and fail import with clear me
   e <- df_read_cache("extraction", p)[["10.1/x"]]$result
   e$data_points[[1]]$group_id <- "g1"; e$data_points[[2]]$statistic_type <- "mean_sd"
   expect_length(df_save_extraction("10.1/x", e, p), 0)
-  expect_equal(suppressMessages(df_import_batch("10.1/x", p))$status, "imported")
+  expect_equal(suppressMessages(df_import_batch("10.1/x", p))$status, "submitted")
 })
 
 test_that("missing or unsupported full texts fail per study, not the batch", {
@@ -73,8 +97,8 @@ test_that("the project vocabulary reaches the prompt and synonyms are canonicali
   syn <- function(contents) { x <- good_extraction(contents); x$data_points[[1]]$variable_name <- "x-level"; x }
   f <- tempfile(fileext = ".txt"); writeLines("text", f)
   suppressMessages(df_extract_batch(mock_chat(syn), c("10.1/x" = f), p))
-  suppressMessages(df_import_batch("10.1/x", p))
-  d <- metawoRld::read_study(p, "10.1/x")$data
+  imp <- suppressMessages(df_import_batch("10.1/x", p))
+  d <- metawoRld::read_submission(p, imp$study_id, imp$extraction_id)$data
   expect_equal(d$variable_name, c("Biomarker X", "X"))
   expect_equal(d$notes[1], "Reported as 'x-level'.")
 })

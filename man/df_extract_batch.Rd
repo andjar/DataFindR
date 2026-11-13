@@ -52,7 +52,7 @@ validation problems), \code{error}, \code{input_tokens}, \code{output_tokens}, \
 }
 \description{
 Sends each full text with the project's extraction prompt and asks for a
-structured result following \verb{_extraction_schema.yml}. The result is
+structured result following \code{forms/extraction.yml}. The result is
 validated against the schema (including the \verb{_ref} links between data
 points and metadata) and cached with its provenance and any validation
 problems. Use \code{\link[=df_import_batch]{df_import_batch()}} to move the results into the project.

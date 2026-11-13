@@ -64,27 +64,35 @@ df_fetch_metadata <- function(identifiers,
   out
 }
 
-#' Search PubMed and cache the results
+#' Search PubMed, log the search and register the records
 #'
 #' Runs a PubMed query, fetches metadata for every hit and stores it in the
-#' project's metadata cache, ready for [df_assess_batch()]. Records that are
-#' already cached are not fetched again, which makes repeated searches cheap
-#' in a living review.
+#' metadata cache, ready for [df_assess_batch()]. The search is logged in the
+#' project's `searches.yml` ([metawoRld::add_search()]) and every hit is
+#' added to `records.csv` ([metawoRld::add_records()]), so PRISMA counts
+#' include it. Records that are already cached are not fetched again, which
+#' makes repeated searches cheap in a living review.
 #'
 #' @param query PubMed query string.
 #' @param metawoRld_path Project root.
 #' @param max_results Maximum number of records. Defaults to 10000.
 #' @param mindate,maxdate Optional publication date limits (`"YYYY/MM/DD"`,
 #'   `"YYYY/MM"` or `"YYYY"`).
+#' @param person Id (from `people.yml`) of the person running the search.
+#'   Defaults to the `metawoRld.person` option, else DataFindR itself.
+#' @param search_id Id for the search log. Defaults to
+#'   `pubmed-<date>-<time>`.
 #' @inheritParams df_fetch_metadata
-#' @return A tibble with `identifier` (PMID), `title`, `year` and `new`
-#'   (`TRUE` if the record was not in the cache before).
+#' @return A tibble with `identifier` (PMID), `record_id`, `title`, `year`
+#'   and `new` (`TRUE` if the record was not in the registry before).
 #' @export
 df_search_pubmed <- function(query,
                              metawoRld_path = ".",
                              max_results = 10000,
                              mindate = NULL,
                              maxdate = NULL,
+                             person = NULL,
+                             search_id = NULL,
                              email = Sys.getenv("DATAFINDR_EMAIL"),
                              api_key = Sys.getenv("NCBI_API_KEY")) {
   proj <- .check_project(metawoRld_path)
@@ -99,7 +107,20 @@ df_search_pubmed <- function(query,
   if (total > length(pmids)) {
     rlang::warn(sprintf("Query matched %d records; only the first %d were retrieved (see `max_results`).", total, length(pmids)))
   }
-  if (!length(pmids)) return(dplyr::tibble(identifier = character(0), title = character(0), year = integer(0), new = logical(0)))
+  .ensure_tool(proj)
+  person <- .person(person) %||% .tool_id()
+  if (is.null(search_id)) {
+    taken <- vapply(yaml::read_yaml(fs::path(proj, "searches.yml"))$searches %||% list(), function(s) as.character(s$id), character(1))
+    base <- paste0("pubmed-", format(Sys.time(), "%Y%m%d-%H%M%S", tz = "UTC"))
+    search_id <- base
+    k <- 2
+    while (search_id %in% taken) { search_id <- paste0(base, "-", k); k <- k + 1 }
+  }
+  q <- query
+  if (!is.null(mindate) || !is.null(maxdate)) q <- paste0(q, "  [publication date ", mindate %||% "", " to ", maxdate %||% "", "]")
+  metawoRld::add_search(proj, search_id, "PubMed", q, results = total, person = person)
+  if (!length(pmids)) return(dplyr::tibble(identifier = character(0), record_id = character(0), title = character(0),
+                                           year = integer(0), new = logical(0)))
 
   cached <- vapply(pmids, function(p) !is.null(.cache_read(p, "metadata", proj)), logical(1))
   if (any(!cached)) {
@@ -107,12 +128,18 @@ df_search_pubmed <- function(query,
     for (r in recs) .cache_write(r$pmid, c(list(identifier = r$pmid), r), "metadata", proj)
   }
   meta <- lapply(pmids, function(p) .cache_read(p, "metadata", proj))
-  rlang::inform(sprintf("%d records (%d new) cached for query.", length(pmids), sum(!cached)))
+  chr <- function(f) vapply(meta, function(m) { v <- m[[f]]; if (is.null(v) || all(is.na(v))) "" else paste(unlist(v), collapse = "; ") }, character(1))
+  recs <- data.frame(pmid = pmids, doi = chr("doi"), title = chr("title"), year = chr("year"),
+                     journal = chr("journal"), authors = chr("authors"), stringsAsFactors = FALSE)
+  recs$title[!nzchar(recs$title)] <- paste0("PMID ", recs$pmid[!nzchar(recs$title)])
+  reg <- metawoRld::add_records(proj, recs, search = search_id)
+  rlang::inform(sprintf("%d records (%d new to the registry) logged as search '%s'.", length(pmids), sum(reg$new), search_id))
   dplyr::tibble(
     identifier = pmids,
-    title = vapply(meta, function(m) as.character(m$title %||% NA_character_), character(1)),
+    record_id = reg$record_id,
+    title = recs$title,
     year = vapply(meta, function(m) as.integer(m$year %||% NA_integer_), integer(1)),
-    new = !cached
+    new = reg$new
   )
 }
 

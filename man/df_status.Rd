@@ -2,7 +2,7 @@
 % Please edit documentation in R/caching.R
 \name{df_status}
 \alias{df_status}
-\title{Status of every study in the pipeline}
+\title{Progress of each record}
 \usage{
 df_status(metawoRld_path = ".", chat = NULL)
 }
@@ -11,15 +11,16 @@ df_status(metawoRld_path = ".", chat = NULL)
 
 \item{chat}{Optional ellmer chat used for assessment/extraction. If given,
 \code{assessment_stale}/\code{extraction_stale} show whether the cached result was
-produced with a different prompt, schema, criteria or model.}
+produced with a different prompt, form, criteria or model.}
 }
 \value{
-A tibble with one row per identifier: \code{has_metadata}, \code{has_abstract},
-\code{decision}, \code{score}, \code{assessment_source}, \code{extracted},
-\code{extraction_errors} (number of schema problems), \code{imported}, and the
-staleness columns.
+A tibble with one row per identifier: \code{has_metadata},
+\code{has_abstract}, \code{decision}, \code{score}, \code{assessment_source}, \code{extracted},
+\code{extraction_errors} (number of form problems), \code{submitted} (the cached
+extraction was submitted), \code{study_id} and \code{accepted} (the study has
+accepted data in \verb{data/}), and the staleness columns.
 }
 \description{
-Combines the metadata, assessment and extraction caches with the studies
-already imported into the metawoRld project.
+Combines the metadata, assessment and extraction caches with the
+project's submissions and accepted studies.
 }

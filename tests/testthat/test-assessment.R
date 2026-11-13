@@ -36,7 +36,12 @@ test_that("manual decisions are kept and missing metadata is reported", {
   local_mocked_bindings(.http_get = fake_http)
   p <- local_project()
   suppressMessages(df_search_pubmed("q", p, email = "", api_key = ""))
-  df_save_assessment("11111111", "Exclude", "Wrong sample type", metawoRld_path = p, reviewer = "AHJ")
+  df_save_assessment("11111111", "Exclude", "Wrong sample type", exclusion_reason = "Wrong sample",
+                     metawoRld_path = p, reviewer = "ahj")
+  scr <- read.csv(file.path(p, "screening.csv"), colClasses = "character")
+  expect_equal(scr$person, "ahj")
+  expect_equal(scr$reason, "Wrong sample")
+  expect_warning(df_save_assessment("22222222", "Include", metawoRld_path = p), "not logged")
   chat <- mock_chat(include_all)
   res <- suppressWarnings(suppressMessages(df_assess_batch(chat, c("11111111", "Smith2020"), p, mode = "sequential")))
   expect_equal(res$status, c("cached", "failed"))

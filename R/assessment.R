@@ -2,7 +2,7 @@
 #'
 #' For each identifier: gets metadata (from the cache, or fetched and cached),
 #' fills the project's assessment prompt, asks the LLM for a structured
-#' decision following `_assessment_schema.yml`, validates it, and caches the
+#' decision following `forms/screening.yml`, validates it, and caches the
 #' result together with its provenance (model, token use, cost and a
 #' fingerprint of the prompt, schema and criteria).
 #'
@@ -62,7 +62,7 @@ df_assess_batch <- function(chat,
   if (!length(cfg$inclusion_criteria) && !length(cfg$exclusion_criteria)) {
     rlang::abort("No inclusion or exclusion criteria in _metawoRld.yml.")
   }
-  schema <- metawoRld::get_schema(proj, "assessment")
+  schema <- metawoRld::get_schema(proj, "screening")
   type <- df_schema_to_ellmer(schema)
   model <- .model_name(chat)
   hash <- .assessment_hash(proj, model)
@@ -105,7 +105,8 @@ df_assess_batch <- function(chat,
     return(.finish_assessment(res))
   }
 
-  # 4. Validate and cache
+  # 4. Validate, cache and log in the project's screening.csv
+  .ensure_tool(proj)
   values <- unlist(schema$decision$`_values`)
   for (i in seq_along(todo)) {
     id <- todo[[i]]
@@ -122,6 +123,7 @@ df_assess_batch <- function(chat,
     }
     errs <- metawoRld::validate_against_schema(r, schema, path = "assessment")
     .cache_write(id, .cache_entry(r, "llm", model, hash, out$usage[[i]], errs), "assessment", proj)
+    if (!length(errs)) .log_screening(proj, id, r$decision, r$exclusion_reason, .tool_id())
     res <- .fill_assessment_row(res, id, if (length(errs)) "failed" else "assessed", r,
                                 error = if (length(errs)) paste(errs, collapse = "; ") else NA_character_,
                                 usage = out$usage[[i]])
@@ -145,7 +147,8 @@ df_assess_relevance <- function(chat, identifier, metawoRld_path = ".", ...) {
 #' Save a manual screening decision
 #'
 #' Manual decisions are never overwritten by [df_assess_batch()] unless
-#' `force = TRUE` is used there.
+#' `force = TRUE` is used there. The decision is also logged in the project's
+#' `screening.csv` under the reviewer's id ([metawoRld::add_screening()]).
 #'
 #' @param identifier Study identifier.
 #' @param decision One of the decisions allowed by the assessment schema
@@ -154,19 +157,32 @@ df_assess_relevance <- function(chat, identifier, metawoRld_path = ".", ...) {
 #' @param score Optional inclusion probability (0-1).
 #' @param exclusion_reason Optional reason for exclusion.
 #' @param metawoRld_path Project root.
-#' @param reviewer Optional reviewer name or initials.
+#' @param reviewer Reviewer id from `people.yml`. Defaults to the
+#'   `metawoRld.person` option. Without a reviewer the decision is only
+#'   cached, not logged.
+#' @param stage Screening stage: `"title_abstract"` (default) or
+#'   `"full_text"`.
 #' @return The cache file, invisibly.
 #' @export
 df_save_assessment <- function(identifier, decision, rationale = "", score = NULL,
-                               exclusion_reason = NULL, metawoRld_path = ".", reviewer = NULL) {
+                               exclusion_reason = NULL, metawoRld_path = ".", reviewer = NULL,
+                               stage = c("title_abstract", "full_text")) {
+  stage <- match.arg(stage)
   proj <- .check_project(metawoRld_path)
-  schema <- metawoRld::get_schema(proj, "assessment")
+  schema <- metawoRld::get_schema(proj, "screening")
   values <- unlist(schema$decision$`_values`)
   if (!decision %in% values) rlang::abort(paste0("`decision` must be one of: ", paste(values, collapse = ", ")))
   score <- score %||% switch(decision, Include = 1, Exclude = 0, 0.5)
   r <- .compact_na(list(decision = decision, score = score, rationale = rationale, exclusion_reason = exclusion_reason))
+  reviewer <- .person(reviewer)
   usage <- if (is.null(reviewer)) list() else list(reviewer = reviewer)
-  invisible(.cache_write(identifier, .cache_entry(r, "manual", "manual", NA, usage), "assessment", proj))
+  f <- .cache_write(identifier, .cache_entry(r, "manual", "manual", NA, usage), "assessment", proj)
+  if (is.null(reviewer)) {
+    rlang::warn("No reviewer given (or `metawoRld.person` option set): the decision is cached but not logged in screening.csv.")
+  } else {
+    .log_screening(proj, metawoRld::normalize_identifier(identifier), decision, exclusion_reason %||% "", reviewer, stage)
+  }
+  invisible(f)
 }
 
 # ---- helpers -------------------------------------------------------------------

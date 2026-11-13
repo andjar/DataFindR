@@ -1,7 +1,7 @@
 #' Extract data from full texts with an LLM
 #'
 #' Sends each full text with the project's extraction prompt and asks for a
-#' structured result following `_extraction_schema.yml`. The result is
+#' structured result following `forms/extraction.yml`. The result is
 #' validated against the schema (including the `_ref` links between data
 #' points and metadata) and cached with its provenance and any validation
 #' problems. Use [df_import_batch()] to move the results into the project.
@@ -108,7 +108,8 @@ df_extract_batch <- function(chat,
     }
     r <- .compact_na(r)
     errs <- .extraction_problems(r, schema)
-    .cache_write(id, .cache_entry(r, "llm", model, hash, out$usage[[i]], errs), "extraction", proj)
+    usage <- c(out$usage[[i]], list(source_sha256 = metawoRld::hash_file(files[[id]]), source_file = fs::path_file(files[[id]])))
+    .cache_write(id, .cache_entry(r, "llm", model, hash, usage, errs), "extraction", proj)
     u <- out$usage[[i]]
     res <- set_row(res, id, status = "extracted", n_data_points = length(r$data_points),
                    n_problems = length(errs),

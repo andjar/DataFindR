@@ -1,6 +1,6 @@
 #' Build the screening prompt for one study
 #'
-#' Fills the project's `_assessment_prompt.txt` with the project description,
+#' Fills the project's `prompts/screening.txt` with the project description,
 #' criteria and the study's title and abstract. Useful to inspect exactly what
 #' is sent to the LLM.
 #'
@@ -59,12 +59,13 @@ df_extraction_prompt <- function(identifier, metawoRld_path = ".", metadata = NU
 }
 
 .read_prompt <- function(proj, type) {
-  f <- fs::path(proj, paste0("_", type, "_prompt.txt"))
+  name <- if (identical(type, "assessment")) "screening" else type
+  f <- fs::path(proj, "prompts", paste0(name, ".txt"))
   if (!fs::file_exists(f)) {
-    f <- system.file("templates", paste0("_", type, "_prompt.txt"), package = "metawoRld")
-    rlang::warn(paste0("_", type, "_prompt.txt not found in project; using metawoRld's default. ",
+    f <- system.file("templates", "prompts", paste0(name, ".txt"), package = "metawoRld")
+    rlang::warn(paste0("prompts/", name, ".txt not found in project; using metawoRld's default. ",
                        "Run metawoRld::use_templates() to add it."), .frequency = "once",
-                .frequency_id = paste0("prompt-", type))
+                .frequency_id = paste0("datafindr_prompt_", name))
   }
   paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 }
@@ -84,7 +85,7 @@ df_extraction_prompt <- function(identifier, metawoRld_path = ".", metadata = NU
 
 .assessment_hash <- function(proj, model) {
   cfg <- metawoRld::read_config(proj)
-  .hash("assessment", .read_prompt(proj, "assessment"), metawoRld::get_schema(proj, "assessment"),
+  .hash("assessment", .read_prompt(proj, "assessment"), metawoRld::get_schema(proj, "screening"),
         cfg$project_name, cfg$project_description, cfg$inclusion_criteria, cfg$exclusion_criteria, model)
 }
 

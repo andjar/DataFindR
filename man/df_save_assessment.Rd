@@ -11,7 +11,8 @@ df_save_assessment(
   score = NULL,
   exclusion_reason = NULL,
   metawoRld_path = ".",
-  reviewer = NULL
+  reviewer = NULL,
+  stage = c("title_abstract", "full_text")
 )
 }
 \arguments{
@@ -28,12 +29,18 @@ df_save_assessment(
 
 \item{metawoRld_path}{Project root.}
 
-\item{reviewer}{Optional reviewer name or initials.}
+\item{reviewer}{Reviewer id from \code{people.yml}. Defaults to the
+\code{metawoRld.person} option. Without a reviewer the decision is only
+cached, not logged.}
+
+\item{stage}{Screening stage: \code{"title_abstract"} (default) or
+\code{"full_text"}.}
 }
 \value{
 The cache file, invisibly.
 }
 \description{
 Manual decisions are never overwritten by \code{\link[=df_assess_batch]{df_assess_batch()}} unless
-\code{force = TRUE} is used there.
+\code{force = TRUE} is used there. The decision is also logged in the project's
+\code{screening.csv} under the reviewer's id (\code{\link[metawoRld:add_screening]{metawoRld::add_screening()}}).
 }

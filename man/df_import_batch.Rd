@@ -2,28 +2,29 @@
 % Please edit documentation in R/importing.R
 \name{df_import_batch}
 \alias{df_import_batch}
-\title{Import several cached extractions}
+\title{Submit several cached extractions}
 \usage{
 df_import_batch(
   identifiers = NULL,
   metawoRld_path = ".",
-  overwrite = FALSE,
   merge_metadata = TRUE,
-  canonical_names = TRUE
+  canonical_names = TRUE,
+  resubmit = FALSE
 )
 }
 \arguments{
-\item{identifiers}{Identifiers to import. Defaults to every cached
-extraction that is not yet in the project.}
+\item{identifiers}{Identifiers to submit. Defaults to every cached
+extraction that has not been submitted yet.}
 
 \item{metawoRld_path}{Project root.}
 
-\item{overwrite, merge_metadata, canonical_names}{See \code{\link[=df_import_extraction]{df_import_extraction()}}.}
+\item{merge_metadata, canonical_names, resubmit}{See \code{\link[=df_import_extraction]{df_import_extraction()}}.}
 }
 \value{
-A tibble with \code{identifier}, \code{status} (\code{"imported"} or \code{"failed"}),
-\code{path} and \code{error}. Validation problems are listed in \code{error}.
+A tibble with \code{identifier}, \code{status} (\code{"submitted"} or
+\code{"failed"}), \code{study_id}, \code{extraction_id} and \code{error}. Validation
+problems are listed in \code{error}.
 }
 \description{
-Import several cached extractions
+Submit several cached extractions
 }

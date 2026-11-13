@@ -6,22 +6,31 @@
 \alias{DataFindR-package}
 \title{DataFindR: LLM-assisted screening and data extraction for metawoRld projects}
 \description{
+DataFindR is one input channel for a metawoRld project. It writes to the
+project only through metawoRld's functions: searches and records go to the
+registry, screening decisions to \code{screening.csv} (as the tool
+\code{datafindr}), and extracted data become submissions that a person accepts.
+}
+\details{
 Typical workflow:
 \enumerate{
 \item \code{\link[=df_search_pubmed]{df_search_pubmed()}} (or \code{\link[=df_fetch_metadata]{df_fetch_metadata()}} / \code{\link[=df_add_metadata]{df_add_metadata()}})
-collects records and caches their titles and abstracts.
+collects records, logs the search and registers the records.
 \item \code{\link[=df_assess_batch]{df_assess_batch()}} screens them against the project's criteria;
-\code{\link[=df_shiny_assess]{df_shiny_assess()}} lets you review and override decisions.
+\code{\link[=df_shiny_assess]{df_shiny_assess()}} lets people review and add their own decisions.
 \item \code{\link[=df_extract_batch]{df_extract_batch()}} extracts data from the full texts of included
 studies; \code{\link[=df_shiny_extract]{df_shiny_extract()}} lets you check and correct the results.
-\item \code{\link[=df_import_batch]{df_import_batch()}} validates and stores the studies in the metawoRld
-project. \code{\link[=df_status]{df_status()}} and \code{\link[=df_prisma_counts]{df_prisma_counts()}} show progress.
+\item \code{\link[=df_import_batch]{df_import_batch()}} submits the extractions with
+\code{\link[metawoRld:submit_study]{metawoRld::submit_study()}}; accept them with
+\code{\link[metawoRld:accept_submission]{metawoRld::accept_submission()}} or \code{\link[metawoRld:reconcile]{metawoRld::reconcile()}}.
+\code{\link[=df_status]{df_status()}} and \code{\link[metawoRld:prisma_counts]{metawoRld::prisma_counts()}} show progress.
 }
-}
-\details{
-Prompts, schemas and criteria live in the metawoRld project and can be
-edited there. All LLM results are cached in the project with their
-provenance, so repeated runs only process new or changed work.
+
+Prompts, forms and criteria live in the metawoRld project and can be
+edited there. All LLM results are cached with their provenance (model,
+tokens, cost, source file hash), so repeated runs only process new or
+changed work. Local models (e.g. \code{ellmer::chat_ollama()}) work like any
+other provider.
 }
 \seealso{
 Useful links:

@@ -10,11 +10,9 @@ df_prisma_counts(metawoRld_path = ".")
 \item{metawoRld_path}{Project root.}
 }
 \value{
-A tibble with \code{stage} and \code{n}: records identified, screened,
-excluded at screening (with a row per exclusion reason when available),
-needing manual review, included for full text, extracted and included in
-the review (imported).
+See \code{\link[metawoRld:prisma_counts]{metawoRld::prisma_counts()}}.
 }
 \description{
-Counts for a PRISMA flow diagram
+Deprecated: PRISMA counts come from the project's record registry and
+screening log, which DataFindR fills. Use \code{\link[metawoRld:prisma_counts]{metawoRld::prisma_counts()}}.
 }
